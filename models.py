@@ -367,19 +367,25 @@ def forecast_future_lstm(model, scaler, df, n_days=14):
              
         temp_df = create_technical_indicators(temp_df)
         
-        # Log Ret calculation on the fly
+        # Log Ret calculation
         temp_df['Log_Ret'] = np.log(temp_df['Close'] / temp_df['Close'].shift(1))
-        temp_df.fillna(0, inplace=True)
+        temp_df['Log_Ret'].fillna(0, inplace=True)
         
-        # Lags
+        # Manually create Lag_Ret (before calling util which drops rows)
         for i in range(1, 4):
             temp_df[f'Lag_Ret_{i}'] = temp_df['Log_Ret'].shift(i)
-            # Use the robust vol_col
-            temp_df[f'Lag_Vol_{i}'] = temp_df[vol_col].astype(float).shift(i)
-            temp_df[f'Lag_ATR_{i}'] = temp_df['ATR'].shift(i)
+            # Note: create_lag_features will handle Lag_Vol, Lag_ATR, Lag_Close etc.
             
-        temp_df.dropna(inplace=True)
-        current_feats = temp_df[features].iloc[-1:].values
+        # Call utils to create standard lag features (Close, Vol, RSI, MACD, ATR)
+        # This function also handles dropna() at the end
+        temp_df = create_lag_features(temp_df)
+        
+        # Safe interaction: create_lag_features drops rows, but we only need the last one
+        if len(temp_df) == 0:
+             # Fallback if dropna removes everything (shouldn't happen with sufficient history)
+             current_feats = np.zeros((1, len(features)))
+        else:
+             current_feats = temp_df[features].iloc[-1:].values
         
         # Scaling
         current_scaled = scaler.transform(current_feats)
