@@ -68,40 +68,8 @@ st.markdown("""
         color: var(--text-primary);
     }
     
-    /* Header Styling - Clean & Minimal */
-    header[data-testid="stHeader"] {
-        background: transparent !important;
-    }
-    
-    /* 1. Hide Rainbow Decoration */
-    div[data-testid="stDecoration"] {
-        display: none !important;
-    }
-    
-    /* 2. Hide Toolbar (Deploy, Menu, etc) */
-    div[data-testid="stToolbar"] {
-        display: none !important;
-    }
-    
-    /* 3. Hide Main Menu & Footer */
-    #MainMenu {display: none !important;}
-    footer {display: none !important;}
-    
-    /* 4. EXPLICITLY SHOW & STYLE SIDEBAR TOGGLE */
-    button[data-testid="stSidebarCollapsedControl"] {
-        display: block !important;
-        visibility: visible !important;
-        color: #1e293b !important; /* Dark Slate to contrast with white */
-        background-color: transparent !important;
-        border: none !important;
-        z-index: 1000000 !important; /* Highest priority */
-    }
-    
-    /* Ensure the container of the toggle isn't hidden */
-    div[data-testid="stSidebarCollapsedControl"] {
-        display: block !important;
-        visibility: visible !important; 
-    }
+    /* Header Styling */
+    /* Restored default header visibility */
     
     /* Custom Navigation Bar */
     .nav-bar {
