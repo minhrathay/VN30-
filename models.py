@@ -338,15 +338,33 @@ def forecast_future_lstm(model, scaler, df, n_days=14):
     
     hist_close = list(history_df['Close'].values)
     # Auxiliary lists similar to XGBoost logic for robustness
-    hist_high = list(history_df['High'].values)
-    hist_low = list(history_df['Low'].values)
-    hist_vol = list(history_df['Volume'].values)
+    hist_high = list(history_df['High'].values) if 'High' in history_df.columns else list(history_df['Close'].values)
+    hist_low = list(history_df['Low'].values) if 'Low' in history_df.columns else list(history_df['Close'].values)
+    
+    if 'Vol' in history_df.columns:
+        hist_vol = list(history_df['Vol'].values)
+        vol_col = 'Vol'
+    elif 'Volume' in history_df.columns:
+        hist_vol = list(history_df['Volume'].values)
+        vol_col = 'Volume'
+    else:
+        hist_vol = [1000000] * len(history_df)
+        vol_col = 'Vol'
     
     forecasts = []
-    rng = np.random.RandomState(42)
     
     for _ in range(n_days):
-        temp_df = pd.DataFrame({'Close': hist_close, 'High': hist_high, 'Low': hist_low, 'Volume': hist_vol})
+        temp_df = pd.DataFrame({
+            'Close': hist_close, 
+            'High': hist_high, 
+            'Low': hist_low, 
+            vol_col: hist_vol
+        })
+        
+        # Ensure we don't have mixed 'Vol'/'Volume' confusion in create_technical_indicators
+        if vol_col != 'Volume' and 'Volume' not in temp_df.columns:
+             temp_df['Volume'] = temp_df[vol_col]
+             
         temp_df = create_technical_indicators(temp_df)
         
         # Log Ret calculation on the fly
@@ -356,7 +374,8 @@ def forecast_future_lstm(model, scaler, df, n_days=14):
         # Lags
         for i in range(1, 4):
             temp_df[f'Lag_Ret_{i}'] = temp_df['Log_Ret'].shift(i)
-            temp_df[f'Lag_Vol_{i}'] = temp_df['Volume'].astype(float).shift(i) # Mock
+            # Use the robust vol_col
+            temp_df[f'Lag_Vol_{i}'] = temp_df[vol_col].astype(float).shift(i)
             temp_df[f'Lag_ATR_{i}'] = temp_df['ATR'].shift(i)
             
         temp_df.dropna(inplace=True)
