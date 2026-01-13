@@ -75,7 +75,7 @@ st.markdown("""
     .nav-bar {
         background-color: white;
         padding: 1rem 2rem;
-        margin: -6rem -5rem 2rem -5rem; /* Expanded top */
+        margin: 1rem -5rem 2rem -5rem; /* Adjusted for visible header */
         border-bottom: 1px solid var(--border-color);
         box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
         display: flex;
