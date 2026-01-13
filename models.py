@@ -332,6 +332,9 @@ def forecast_future_lstm(model, scaler, df, n_days=14):
     from utils import create_technical_indicators, create_lag_features
     # Similar logic to XGBoost but with scaling
     features = [col for col in df.columns if col.startswith('Lag_')]
+    # FIX: Add Lag_Ret features which are created in training but not in base df
+    for i in range(1, 4):
+        features.append(f'Lag_Ret_{i}')
     
     history_df = df.copy()
     current_close = history_df['Close'].iloc[-1]
