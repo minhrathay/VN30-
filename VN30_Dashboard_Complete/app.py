@@ -13,14 +13,13 @@ from datetime import datetime
 # Custom modules
 from utils import (
     load_data, create_technical_indicators, create_lag_features,
-    calculate_metrics, load_macro_data
+    calculate_metrics
 )
 from models import (
     train_arimax, train_xgboost, train_lstm,
     train_meta_learner, forecast_ensemble_stacking,
     forecast_future_arimax, forecast_future_xgboost, 
-    forecast_future_lstm, create_future_dates,
-    add_rolling_features, add_macro_features  # Feature Engineering functions
+    forecast_future_lstm, create_future_dates
 )
 
 warnings.filterwarnings('ignore')
@@ -239,12 +238,6 @@ with st.sidebar:
 # -----------------------------------------------------------------------------
 try:
     df = load_data(uploaded_file=uploaded_file)
-    
-    # --- PHASE 2: MACRO DATA INTEGRATION ---
-    df = load_macro_data(df)
-    
-    # --- PHASE 3: FEATURE ENGINEERING ---
-    df = add_macro_features(df)
     df = create_technical_indicators(df)
     df = create_lag_features(df)
     
@@ -324,14 +317,11 @@ if run_btn:
                 # Filter preds to match min_len
                 aligned_preds = {k: v[:min_len] for k, v in preds.items()}
                 
-                # Train Meta-Learner (Feature Augmented)
-                meta_model, model_keys, ens_pred, mape, cv_score = train_meta_learner(y_true, aligned_preds, feature_df=test_data)
+                # Train Meta-Learner
+                meta_model, model_keys, ens_pred, mape = train_meta_learner(y_true, aligned_preds)
                 
                 st.session_state.models['Ensemble'] = (meta_model, model_keys) # Store trained meta-model
                 st.session_state.history_preds['Ensemble'] = ens_pred
-                
-                # Show CV Score (Robustness)
-                st.info(f"Ensemble Cross-Validation Score (MAPE): {cv_score:.2f}% | Test Score: {mape:.2f}%")
                 # XGBoost uses feature_importances_ instead of coef_
                 try:
                     importances = meta_model.feature_importances_
@@ -381,239 +371,28 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
                  meta_model, model_keys = meta_obj
                  valid_keys = [k for k in model_keys if k in future_results]
                  if len(valid_keys) == len(model_keys):
-                     # GENERATE FUTURE CONTEXT (Simple Mean Reversion Projection)
-                     # Needed for Feature-Augmented Stacking
-                     future_context_dict = {}
-                     
-                     # Features to project: RSI, ATR, Correlation, SP500_LogRet
-                     # We use last known value and decay to mean
-                     ctx_cols = ['RSI', 'ATR', 'Correlation_VN30_SP500', 'SP500_LogRet']
-                     
-                     for col in ctx_cols:
-                         if col in df.columns:
-                             last_val = df[col].iloc[-1]
-                             mean_val = df[col].mean()
-                             # Create path: Evolve from Last -> Mean over n_days
-                             # Exponential decay
-                             path = []
-                             for i in range(1, n_days + 1):
-                                 alpha = 1 - np.exp(-0.1 * i)
-                                 val = last_val * (1 - alpha) + mean_val * alpha
-                                 path.append(val)
-                             future_context_dict[col] = path
-                         else:
-                             future_context_dict[col] = [0] * n_days
-                     
-                     future_ctx_df = pd.DataFrame(future_context_dict)
-                     
-                     future_results['Ensemble'] = forecast_ensemble_stacking(meta_model, model_keys, future_results, future_context_df=future_ctx_df)
+                     future_results['Ensemble'] = forecast_ensemble_stacking(meta_model, model_keys, future_results)
         
         # Fallback to weights if Stacking fails (or just to keep flow valid)
 
         # --- Display Ensemble Weights (Donut Chart) ---
-        with st.expander("📊 Show/Hide Model Analysis", expanded=False):
-            # Create 4 tabs for different analysis views
-            tab1, tab2, tab2_b, tab3 = st.tabs(["Ensemble Weights", "Feature Importance", "Trading Simulation (Thesis)", "Metrics Comparison"])
+        with st.expander("Show/Hide Ensemble Details", expanded=False):
+            w_df = pd.DataFrame(list(st.session_state.weights.items()), columns=['Model', 'Weight'])
+            w_df = w_df[w_df['Weight'] > 0] # Show only active models
             
-            # ═══════════════════════════════════════════════════════════════════
-            # TAB 1: Ensemble Contribution Weights (Donut Chart)
-            # ═══════════════════════════════════════════════════════════════════
-            with tab1:
-                w_df = pd.DataFrame(list(st.session_state.weights.items()), columns=['Model', 'Weight'])
-                w_df = w_df[w_df['Weight'] > 0] # Show only active models
-                
-                w_fig = go.Figure(data=[go.Pie(
-                    labels=w_df['Model'], 
-                    values=w_df['Weight'], 
-                    hole=.4,
-                    marker=dict(colors=[chart_colors.get(m, '#94a3b8') for m in w_df['Model']])
-                )])
-                w_fig.update_layout(
-                    title_text="Ensemble Contribution Weights",
-                    height=300,
-                    margin=dict(l=0,r=0,t=30,b=0),
-                    font=dict(family="Inter, sans-serif")
-                )
-                st.plotly_chart(w_fig, use_container_width=True)
-            
-            # ═══════════════════════════════════════════════════════════════════
-            # TAB 2: Feature Importance (XGBoost)
-            # ═══════════════════════════════════════════════════════════════════
-            # ═══════════════════════════════════════════════════════════════════
-            # TAB 2: Feature Importance (Grouped - Thesis Level)
-            # ═══════════════════════════════════════════════════════════════════
-            with tab2:
-                if 'XGBoost' in st.session_state.models:
-                    xgb_model = st.session_state.models['XGBoost'][0]
-                    feature_names = st.session_state.models['XGBoost'][2]
-                    
-                    # 1. Detailed Importance
-                    imp_df = pd.DataFrame({
-                        'Feature': feature_names,
-                        'Importance': xgb_model.feature_importances_
-                    }).sort_values('Importance', ascending=False)
-                    
-                    # 2. Grouped Importance (Thesis Requirement)
-                    # Define Groups
-                    groups = {'Technical': 0, 'Macro (Inter-market)': 0, 'Lagged Attributes': 0}
-                    
-                    for idx, row in imp_df.iterrows():
-                        feat = row['Feature']
-                        val = row['Importance']
-                        
-                        if 'Lag' in feat:
-                            groups['Lagged Attributes'] += val
-                        elif any(x in feat for x in ['SP500', 'USDVND', 'Correlation']):
-                            groups['Macro (Inter-market)'] += val
-                        else:
-                            groups['Technical'] += val
-                            
-                    # Display Charts
-                    c_grp, c_det = st.columns([1, 1])
-                    
-                    with c_grp:
-                        st.markdown("##### Contribution by Category")
-                        grp_df = pd.DataFrame(list(groups.items()), columns=['Group', 'Importance'])
-                        fig_grp = go.Figure(data=[go.Pie(labels=grp_df['Group'], values=grp_df['Importance'], hole=.3)])
-                        fig_grp.update_layout(height=300, margin=dict(t=0,b=0,l=0,r=0), font=dict(family="Inter"))
-                        st.plotly_chart(fig_grp, use_container_width=True)
-                        
-                    with c_det:
-                        st.markdown("##### Top 10 Specific Features")
-                        top_df = imp_df.head(10).sort_values('Importance', ascending=True)
-                        fig_det = go.Figure(go.Bar(
-                            x=top_df['Importance'], y=top_df['Feature'], orientation='h',
-                            marker=dict(color='#3b82f6')
-                        ))
-                        fig_det.update_layout(height=300, margin=dict(t=0,b=0,l=0,r=0), font=dict(family="Inter"), yaxis_title="")
-                        st.plotly_chart(fig_det, use_container_width=True)
-                    
-                    st.caption("💡 **XAI Insight:** Phân loại cho thấy tầm quan trọng của dữ liệu quá khứ (Lagged) so với tín hiệu kỹ thuật (Technical) và vĩ mô (Macro).")
-                else:
-                    st.info("Chưa có XGBoost model. Hãy chạy phân tích với XGBoost được chọn.")
-            
-            # ═══════════════════════════════════════════════════════════════════
-            # TAB 2B: Trading Simulation (Thesis Request)
-            # ═══════════════════════════════════════════════════════════════════
-            with tab2_b:
-                if 'Ensemble' in st.session_state.history_preds:
-                    st.subheader("🎓 Giả lập Giao dịch (Backtest Brief)")
-                    st.caption("Chiến lược: MUA nếu Dự báo ngày mai > Giá hiện tại + 0.5%. BÁN/GIỮ nếu ngược lại.")
-                    
-                    ens_preds = st.session_state.history_preds['Ensemble']
-                    min_len = min(len(y_true), len(ens_preds))
-                    
-                    if min_len > 1:
-                        # Vectors
-                        prices = y_true[-min_len:]
-                        
-                        # Generate signals based on PREDICTION (not peeking future actuals)
-                        # We simulate "Day T" decision for "Day T+1"
-                        signals = []
-                        capital = 100_000_000 # 100M VND
-                        cash = capital
-                        shares = 0
-                        portfolio_history = []
-                        
-                        # Loop through backtest period
-                        for i in range(min_len - 1):
-                            curr_price = prices[i]
-                            # Pred for next day (i+1) available at day i?
-                            # history_preds is aligned with y_true.
-                            # So ens_preds[i] corresponds to prediction for date[i].
-                            # Actually, normally preds[i] is forecast for time i made at i-1.
-                            
-                            # Let's assume ens_preds[i] is the *forecasted price* for time i.
-                            # To trade at time i-1, we used forecast for i.
-                            
-                            # Strategy:
-                            # At close of day i-1, we see forecast for day i.
-                            # If Forecast(i) > Close(i-1) * 1.005 -> Buy at Open(i) ~ Close(i-1)
-                            
-                            # Valid index check
-                            if i == 0: continue
-                            
-                            prev_close = prices[i-1]
-                            forecast_today = ens_preds[i]
-                            
-                            action = "HOLD"
-                            if forecast_today > prev_close * 1.005:
-                                # Signal BUY
-                                if cash > 0:
-                                    shares = cash / prev_close
-                                    cash = 0
-                                    action = "BUY"
-                            elif forecast_today < prev_close:
-                                # Signal SELL
-                                if shares > 0:
-                                    cash = shares * prev_close
-                                    shares = 0
-                                    action = "SELL"
-                            
-                            # Portfolio Value
-                            port_val = cash + (shares * prices[i])
-                            portfolio_history.append(port_val)
-                        
-                        # Final Value
-                        final_val = portfolio_history[-1] if portfolio_history else capital
-                        return_pct = ((final_val - capital) / capital) * 100
-                        
-                        # Display
-                        c1, c2 = st.columns(2)
-                        c1.metric("Initial Capital", f"{capital:,.0f} VND")
-                        c2.metric("Final Value", f"{final_val:,.0f} VND", f"{return_pct:+.2f}%")
-                        
-                        # Chart
-                        st.line_chart(portfolio_history)
-                        st.info("Lưu ý: Mô phỏng đơn giản không bao gồm phí giao dịch.")
-                else:
-                    st.warning("Cần chạy mô hình Ensemble để giả lập.")
-
-            # ═══════════════════════════════════════════════════════════════════
-            # TAB 3: Error Analysis / Metrics Comparison Table
-            # ═══════════════════════════════════════════════════════════════════
-            with tab3:
-                from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-                
-                y_true = st.session_state.get('test_data', {}).get('Close', None)
-                
-                if y_true is not None and len(st.session_state.history_preds) > 0:
-                    metrics_data = []
-                    
-                    for model_name, preds in st.session_state.history_preds.items():
-                        min_len = min(len(y_true), len(preds))
-                        y_t = y_true.values[:min_len] if hasattr(y_true, 'values') else y_true[:min_len]
-                        p = preds[:min_len]
-                        
-                        mse = mean_squared_error(y_t, p)
-                        rmse = np.sqrt(mse)
-                        mae = mean_absolute_error(y_t, p)
-                        mape = mean_absolute_percentage_error(y_t, p) * 100
-                        r2 = r2_score(y_t, p)
-                        
-                        metrics_data.append({
-                            'Model': model_name,
-                            'MSE': f"{mse:,.2f}",
-                            'RMSE': f"{rmse:,.2f}",
-                            'MAE': f"{mae:,.2f}",
-                            'MAPE (%)': f"{mape:.4f}",
-                            'R²': f"{r2:.4f}"
-                        })
-                    
-                    metrics_df = pd.DataFrame(metrics_data)
-                    
-                    st.markdown("### 📈 Error Analysis Table")
-                    st.dataframe(metrics_df, use_container_width=True, hide_index=True)
-                    
-                    st.caption("""
-                    **Giải thích các chỉ số:**
-                    - **MSE/RMSE:** Mean Squared Error - Giá trị càng thấp càng tốt
-                    - **MAE:** Mean Absolute Error - Sai số tuyệt đối trung bình
-                    - **MAPE:** Mean Absolute Percentage Error - % sai số, dễ so sánh giữa các mô hình
-                    - **R²:** Coefficient of Determination - Gần 1 là tốt nhất
-                    """)
-                else:
-                    st.info("Chưa có dữ liệu backtest. Hãy chạy phân tích trước.")
+            w_fig = go.Figure(data=[go.Pie(
+                labels=w_df['Model'], 
+                values=w_df['Weight'], 
+                hole=.4,
+                marker=dict(colors=[chart_colors.get(m, '#94a3b8') for m in w_df['Model']])
+            )])
+            w_fig.update_layout(
+                title_text="Ensemble Contribution Weights",
+                height=300,
+                margin=dict(l=0,r=0,t=30,b=0),
+                font=dict(family="Inter, sans-serif")
+            )
+            st.plotly_chart(w_fig, use_container_width=True)
 
     # Plot - Premium Fintech Aesthetic
     fig = go.Figure()
@@ -633,27 +412,13 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
     for model_name, preds in future_results.items():
         # ENSEMBLE: The "Hero" Line + Confidence Bands
         if model_name == 'Ensemble':
-            # Calculate Confidence Bands based on RMSE (Academic Requirement)
-            ensemble_rmse = 0
-            # Retrieve validation RMSE if available
-            if 'Ensemble' in st.session_state.history_preds:
-                # Re-calculate RMSE on the fly to be safe
-                hist_preds = st.session_state.history_preds['Ensemble']
-                min_len = min(len(df), len(hist_preds))
-                if min_len > 0:
-                     # Use last N points for RMSE where we have preds
-                     # Note: history_preds are aligned with test_data
-                     y_val = df['Close'].iloc[-min_len:].values
-                     ensemble_rmse = np.sqrt(np.mean((y_val - hist_preds[-min_len:])**2))
+            # Calculate Confidence Bands based on historical ATR
+            # ATR gives us the average daily price range
+            historical_atr = df['ATR'].iloc[-20:].mean() if 'ATR' in df.columns else df['Close'].pct_change().std() * df['Close'].iloc[-1]
             
-            # Fallback to ATR if RMSE is 0 (or not available)
-            if ensemble_rmse == 0 or np.isnan(ensemble_rmse):
-                 ensemble_rmse = df['ATR'].iloc[-20:].mean() if 'ATR' in df.columns else df['Close'].pct_change().std() * df['Close'].iloc[-1]
-            
-            # Band width increases over time (uncertainty grows with square root of time)
-            # Width(t) = RMSE * sqrt(t)
-            time_steps = np.arange(1, len(preds) + 1)
-            band_widths = ensemble_rmse * np.sqrt(time_steps)
+            # Band width increases over time (uncertainty grows)
+            band_multipliers = np.linspace(1, 2, len(preds))  # 1x ATR at day 1, 2x ATR at day 14
+            band_widths = historical_atr * band_multipliers
             
             upper_band = preds + band_widths
             lower_band = preds - band_widths

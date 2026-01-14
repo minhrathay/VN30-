@@ -293,3 +293,143 @@ def create_comparison_chart(metrics_df):
 def format_number(num):
     """Format number for display"""
     return f"{num:,.2f}"
+
+def load_macro_data(df_vn30, sp500_path='SP500.csv', usdvnd_path='USD_VND.csv'):
+    """
+    ───────────────────────────────────────────────────────────────────────────────
+    NẠP DỮ LIỆU LIÊN THỊ TRƯỜNG (Thực tế hóa)
+    ───────────────────────────────────────────────────────────────────────────────
+    Input:
+        df_vn30: DataFrame VN30 chuẩn (có cột Date)
+        sp500_path: Đường dẫn file SP500.csv
+        usdvnd_path: Đường dẫn file USD_VND.csv
+    
+    Logic:
+        - Đọc file CSV ngoài
+        - Merge vào VN30 theo Date (Left Join)
+        - Xử lý lệch ngày (Lễ, Tết, Cuối tuần) bằng ffill (Forward Fill)
+    ───────────────────────────────────────────────────────────────────────────────
+    """
+    def smart_rename(df, target_col):
+        # Helper to find price column
+        cols = df.columns
+        # Priority map
+        candidates = ['Close', 'Lần cuối', 'Price', 'Giá', 'Last', 'Đóng cửa', 'Adj Close']
+        
+        for cand in candidates:
+            if cand in cols:
+                return df.rename(columns={cand: target_col})
+        
+        # If no strict match, look for contains
+        for c in cols:
+            if any(x in c.lower() for x in ['close', 'price', 'giá', 'cuối']):
+                return df.rename(columns={c: target_col})
+        return df
+
+    # Helper for Excel support
+    def read_smart(path):
+        # 1. Check exact path
+        if os.path.exists(path):
+            if path.lower().endswith(('.xlsx', '.xls')):
+                return pd.read_excel(path)
+            return pd.read_csv(path)
+        
+        # 2. Check alternative extension
+        base, ext = os.path.splitext(path)
+        
+        # If input was .csv, check .xlsx
+        if ext == '.csv':
+            alt_path = base + '.xlsx'
+            if os.path.exists(alt_path):
+                return pd.read_excel(alt_path)
+        
+        return None
+
+    try:
+        # 1. Load S&P 500
+        sp500 = read_smart(sp500_path)
+        if sp500 is not None:
+            # Tự động nhận diện cột ngày
+            if 'Date' in sp500.columns:
+                sp500['Date'] = pd.to_datetime(sp500['Date'])
+            elif 'Ngày' in sp500.columns:
+                sp500['Date'] = pd.to_datetime(sp500['Ngày'], dayfirst=True)
+            else:
+                 # Try to find date column
+                date_cols = [col for col in sp500.columns if 'date' in col.lower() or 'ngày' in col.lower()]
+                if date_cols:
+                    sp500['Date'] = pd.to_datetime(sp500[date_cols[0]])
+
+            # Đổi tên cột giá
+            sp500 = smart_rename(sp500, 'SP500')
+            
+            if 'SP500' in sp500.columns and 'Date' in sp500.columns:
+                sp500 = sp500[['Date', 'SP500']].set_index('Date')
+                # Clean numeric
+                if sp500['SP500'].dtype == object:
+                     sp500['SP500'] = sp500['SP500'].astype(str).str.replace(',', '').astype(float)
+            else:
+                sp500 = pd.DataFrame()
+        else:
+            # print(f"Warning: Không tìm thấy {sp500_path}")
+            sp500 = pd.DataFrame()
+
+        # 2. Load USD/VND
+        usdvnd = read_smart(usdvnd_path)
+        if usdvnd is not None:
+            if 'Date' in usdvnd.columns:
+                usdvnd['Date'] = pd.to_datetime(usdvnd['Date'])
+            elif 'Ngày' in usdvnd.columns:
+                usdvnd['Date'] = pd.to_datetime(usdvnd['Ngày'], dayfirst=True)
+            else:
+                 # Try to find date column
+                date_cols = [col for col in usdvnd.columns if 'date' in col.lower() or 'ngày' in col.lower()]
+                if date_cols:
+                    usdvnd['Date'] = pd.to_datetime(usdvnd[date_cols[0]])
+                
+            usdvnd = smart_rename(usdvnd, 'USDVND')
+            
+            if 'USDVND' in usdvnd.columns and 'Date' in usdvnd.columns:
+                usdvnd = usdvnd[['Date', 'USDVND']].set_index('Date')
+                if usdvnd['USDVND'].dtype == object:
+                     usdvnd['USDVND'] = usdvnd['USDVND'].astype(str).str.replace(',', '').astype(float)
+            else:
+                 usdvnd = pd.DataFrame()
+        else:
+            # print(f"Warning: Không tìm thấy {usdvnd_path}")
+            usdvnd = pd.DataFrame()
+
+        # 3. Merge vào VN30
+        # Đảm bảo df_vn30 có index là Date hoặc cột Date chuẩn
+        df_out = df_vn30.copy()
+        date_col_name = None
+        if 'Date' in df_out.columns:
+            date_col_name = 'Date'
+        
+        # Nếu Date đang là Index, reset để merge dễ dàng (hoặc join trực tiếp index)
+        # Cách tốt nhất: Set index là Date cho cả 3 rồi join
+        is_index_date = isinstance(df_out.index, pd.DatetimeIndex)
+        
+        if not is_index_date and date_col_name:
+            df_out['Date'] = pd.to_datetime(df_out['Date'])
+            df_out.set_index('Date', inplace=True)
+        
+        # Join (Left Join để giữ cấu trúc VN30)
+        df_out = df_out.join(sp500, how='left')
+        df_out = df_out.join(usdvnd, how='left')
+
+        # 4. Xử lý Missing Data (Quan trọng cho tính thực tế)
+        # Forward fill: Dùng giá ngày liền trước cho ngày nghỉ
+        df_out[['SP500', 'USDVND']] = df_out[['SP500', 'USDVND']].fillna(method='ffill')
+        
+        # Backward fill cho những ngày đầu tiên nếu thiếu
+        df_out[['SP500', 'USDVND']] = df_out[['SP500', 'USDVND']].fillna(method='bfill')
+
+        # Nếu vẫn còn NaN (do cả cột ko có dữ liệu), fill bằng 0 hoặc drop?
+        # Fill 0 để tránh lỗi model, nhưng cảnh báo
+        if 'SP500' in df_out.columns and df_out['SP500'].isnull().all():
+            df_out['SP500'] = 0
+        if 'USDVND' in df_out.columns and df_out['USDVND'].isnull().all():
+            df_out['USDVND'] = 24000 # Default fallback
+            
+        return df_out
