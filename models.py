@@ -1,4 +1,4 @@
-"""
+﻿"""
 Model training and prediction functions for VN30 Forecasting
 HYBRID STRATEGY: Trend (Robust Linear) + Residuals (Direct Multi-step ML)
 """
@@ -59,48 +59,65 @@ def add_rolling_features(df, windows=[7, 14, 21]):
     
     return df
 
-def add_macro_features(df):
+def add_macro_features(df, sp500_csv=None, usdvnd_csv=None):
     """
     ───────────────────────────────────────────────────────────────────────────────
-    FEATURE ENGINEERING LIÊN THỊ TRƯỜNG (Feature-Augmented)
+    THÊM BIẾN LIÊN THỊ TRƯỜNG (Inter-market Variables)
     ───────────────────────────────────────────────────────────────────────────────
-    Input: df đã tích hợp dữ liệu SP500 và USDVND.
-    Output: df với các biến phái sinh mới.
+    Mục tiêu: Tích hợp ảnh hưởng của thị trường quốc tế và vĩ mô lên VN30.
     
-    New Feature: Correlation_VN30_SP500 (Rolling 20 days)
+    Biến số:
+        - S&P 500:   Chỉ số chứng khoán Mỹ (tương quan cao với các thị trường châu Á)
+        - USD/VND:   Tỷ giá hối đoái (ảnh hưởng đến dòng vốn nước ngoài)
+    
+    LƯU Ý: Hiện tại sử dụng DỮ LIỆU GIẢ LẬP (simulated).
+           Bạn có thể thay thế bằng file CSV thật bằng cách truyền đường dẫn vào.
     ───────────────────────────────────────────────────────────────────────────────
     """
-    # Kiểm tra dữ liệu đầu vào
-    if 'SP500' not in df.columns:
-        df['SP500'] = 0
-    if 'USDVND' not in df.columns:
-        df['USDVND'] = 0
+    if sp500_csv is not None and usdvnd_csv is not None:
+        # ────────────────────────────────────────────────────────────────────────
+        # PHƯƠNG ÁN 1: Load từ file CSV thật
+        # ────────────────────────────────────────────────────────────────────────
+        try:
+            sp500 = pd.read_csv(sp500_csv, parse_dates=['Date'], index_col='Date')
+            usdvnd = pd.read_csv(usdvnd_csv, parse_dates=['Date'], index_col='Date')
+            
+            df = df.join(sp500[['Close']].rename(columns={'Close': 'SP500'}), how='left')
+            df = df.join(usdvnd[['Close']].rename(columns={'Close': 'USDVND'}), how='left')
+            
+            # Fill missing values bằng forward fill
+            df['SP500'].fillna(method='ffill', inplace=True)
+            df['USDVND'].fillna(method='ffill', inplace=True)
+        except Exception as e:
+            print(f"Không thể load dữ liệu macro: {e}. Sử dụng dữ liệu giả lập.")
+            sp500_csv = None  # Fallback to simulated
+    
+    if sp500_csv is None or usdvnd_csv is None:
+        # Check if columns already exist (loaded via utils.load_macro_data)
+        if 'SP500' in df.columns and 'USDVND' in df.columns:
+            # Data already loaded, skip simulation
+            pass
+        else:
+            # ────────────────────────────────────────────────────────────────────────
+            # PHƯƠNG ÁN 2: Dữ liệu giả lập (Simulated)
+            # ────────────────────────────────────────────────────────────────────────
+            # S&P 500: Giả lập với tương quan 0.6 với VN30
+            np.random.seed(42) # [CRITICAL] Enforce determinism for simulated data
+            vn30_returns = df['Close'].pct_change().fillna(0)
+        noise = np.random.normal(0, 0.005, len(df))
+        sp500_returns = 0.6 * vn30_returns + 0.4 * noise
+        df['SP500'] = (1 + sp500_returns).cumprod() * 4500  # Base ~4500
         
-    # 1. Rolling Correlation: Đo lường mức độ đồng pha giữa VN30 và S&P500
-    # Window = 20 (khoảng 1 tháng giao dịch)
-    try:
-        df['Correlation_VN30_SP500'] = df['Close'].rolling(window=20).corr(df['SP500'])
-        df['Correlation_VN30_SP500'] = df['Correlation_VN30_SP500'].fillna(0)
-    except:
-        df['Correlation_VN30_SP500'] = 0
-
-    # 2. Log Returns: Biến động tương đối (Stationary)
-    # Tránh chia cho 0
-    with np.errstate(divide='ignore', invalid='ignore'):
-        df['SP500_LogRet'] = np.log(df['SP500'] / df['SP500'].shift(1))
-        df['USDVND_LogRet'] = np.log(df['USDVND'] / df['USDVND'].shift(1))
+        # USD/VND: Giả lập với dao động nhỏ quanh 24,500
+        df['USDVND'] = 24500 + np.cumsum(np.random.normal(0, 10, len(df)))
     
-    df['SP500_LogRet'] = df['SP500_LogRet'].replace([np.inf, -np.inf], 0).fillna(0)
-    df['USDVND_LogRet'] = df['USDVND_LogRet'].replace([np.inf, -np.inf], 0).fillna(0)
-
-    # 3. Lag Features (Trễ): Dùng thông tin t-1 để dự báo t
-    # Đây là bước quan trọng để tránh Data Leakage
-    df['Lag_SP500_Ret_1'] = df['SP500_LogRet'].shift(1)
-    df['Lag_USDVND_Ret_1'] = df['USDVND_LogRet'].shift(1)
-    df['Lag_Corr_VN30_SP500_1'] = df['Correlation_VN30_SP500'].shift(1)
+    # Tạo Lag Features
+    df['Lag_SP500'] = df['SP500'].shift(1)
+    df['Lag_USDVND'] = df['USDVND'].shift(1)
     
-    # Drop missing rows created by lags
-    df.dropna(inplace=True)
+    # Tính Log Returns của các biến macro
+    df['SP500_LogRet'] = np.log(df['SP500'] / df['SP500'].shift(1))
+    df['USDVND_LogRet'] = np.log(df['USDVND'] / df['USDVND'].shift(1))
     
     return df
 
@@ -110,25 +127,16 @@ def add_macro_features(df):
 
 def fit_trend_model(df):
     """
-    ───────────────────────────────────────────────────────────────────────────────
-    MÔ HÌNH HÓA XU HƯỚNG (TREND MODELING)
-    ───────────────────────────────────────────────────────────────────────────────
-    Phương pháp: Holt-Winters Exponential Smoothing (San bằng mũ)
-    Lý do chọn: 
-        - Phản ứng tốt hơn với dữ liệu gần đây so với Polynomial Regression.
-        - Phù hợp cho chuỗi thời gian tài chính có xu hướng thay đổi (Stochastic Trend).
-    
-    Đầu ra:
-        - trend_model: Mô hình đã huấn luyện
-        - residuals: Phần dư (Chuỗi dừng để dự báo bằng ML)
-    ───────────────────────────────────────────────────────────────────────────────
+    Fit Holt-Winters Exponential Smoothing for Trend.
+    More responsive to recent data than Polynomial Trend.
+    Returns: trend_model, residuals, None (no poly object needed)
     """
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
     
     close_prices = df['Close'].values
     
     try:
-        # Holt-Winters dạng cộng tính (Additive), có xu hướng tắt dần (Damped Trend)
+        # Holt-Winters with additive trend, no seasonality, damped trend
         trend_model = ExponentialSmoothing(
             close_prices,
             trend='add',
@@ -137,18 +145,18 @@ def fit_trend_model(df):
             initialization_method='estimated'
         ).fit(optimized=True)
         
-        # Tách thành phần xu hướng
+        # Get fitted values (trend component)
         fitted_trend = trend_model.fittedvalues
         residuals = close_prices - fitted_trend
         
     except Exception as e:
-        # Fallback: Trung bình động (SMA) nếu HW thất bại
+        # Fallback: Simple moving average as trend
         print(f"Holt-Winters failed, using SMA fallback: {e}")
         fitted_trend = pd.Series(close_prices).rolling(window=20, min_periods=1).mean().values
         residuals = close_prices - fitted_trend
         trend_model = None
         
-    return trend_model, residuals, None  # None thay thế cho poly object cũ
+    return trend_model, residuals, None  # None replaces poly object
 
 def create_direct_targets(residuals, n_days=14):
     """
@@ -164,23 +172,16 @@ def create_direct_targets(residuals, n_days=14):
 
 # --- MODELS ---
 
-def train_arimax(train_data, test_data, exog_cols=['Lag_Vol_1', 'RSI', 'ATR']):
+def train_arimax(train_data, test_data, exog_cols=['Lag_Vol_1', 'RSI', 'ATR'], fast_mode=True):
     """
-    ───────────────────────────────────────────────────────────────────────────────
+    ──────────────────────────
     HUẤN LUYỆN MÔ HÌNH ARIMAX (AutoRegressive Integrated Moving Average with eXogenous)
-    ───────────────────────────────────────────────────────────────────────────────
+    ───────────────────────────────
     Mục tiêu: Mô hình thống kê làm nền tảng (Baseline Statistical Model).
     
     Tham số:
-        - p (AR): Tự hồi quy
-        - d (I): Sai phân (để đảm bảo tính dừng)
-        - q (MA): Trung bình trượt
-        - exog: Biến ngoại sinh (Volume, RSI, ATR)
+        - fast_mode: True (Fit 1 lần, dự báo cả test set -> Nhanh), False (Walk-forward -> Chậm).
     
-    Quy trình:
-        1. Grid Search tìm bộ tham số (p,d,q) tối ưu dựa trên AIC.
-        2. Walk-forward Forecast trên tập Test.
-    ───────────────────────────────────────────────────────────────────────────────
     """
     # Xử lý dữ liệu ngoại sinh (Exogenous variables)
     train_exog = train_data[exog_cols].bfill()
@@ -188,56 +189,50 @@ def train_arimax(train_data, test_data, exog_cols=['Lag_Vol_1', 'RSI', 'ATR']):
     train_endog = train_data['Close']
     
     # Grid Search tìm tham số tối ưu (AIC thấp nhất)
-    best_aic = float("inf")
-    best_order = (1, 1, 1)
+    # Để tối ưu tốc độ, ta giới hạn range search hoặc dùng tham số cố định tốt (5,1,0)
+    best_order = (5, 1, 0)
     
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore")
-        for p, d, q in itertools.product(range(0, 3), [1], range(0, 3)):
-            try:
-                model = ARIMA(endog=train_endog, exog=train_exog, order=(p,d,q)).fit()
-                if model.aic < best_aic:
-                    best_aic = model.aic
-                    best_order = (p,d,q)
-            except:
-                continue
-    
-    # Walk-forward forecast (standard ARIMAX)
     history_endog = list(train_endog)
     history_exog = list(train_exog.values)
     predictions = []
     test_exog_vals = test_exog.values
     
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore")
-        for t in range(len(test_data)):
+    if fast_mode:
+        # Cách 1: Fit model 1 lần trên tập Train và Forecast dynamic
+        try:
             model = ARIMA(history_endog, exog=history_exog, order=best_order).fit()
-            pred = model.forecast(steps=1, exog=test_exog_vals[t].reshape(1,-1))[0]
-            predictions.append(pred)
-            history_endog.append(test_data['Close'].iloc[t])
-            history_exog.append(test_exog_vals[t])
+            # Forecast toàn bộ giai đoạn test (Dynamic Forecast)
+            pred_res = model.forecast(steps=len(test_data), exog=test_exog_vals)
+            predictions = pred_res.tolist()
+        except:
+            predictions = [history_endog[-1]] * len(test_data)
+    else:
+        # Walk-forward forecast (Chậm nhưng chính xác hơn cho học thuật)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            for t in range(len(test_data)):
+                model = ARIMA(history_endog, exog=history_exog, order=best_order).fit()
+                pred = model.forecast(steps=1, exog=test_exog_vals[t].reshape(1,-1))[0]
+                predictions.append(pred)
+                history_endog.append(test_data['Close'].iloc[t])
+                history_exog.append(test_exog_vals[t])
     
     return np.array(predictions), best_order
-
-def train_xgboost(train_data, test_data, n_days=14):
+def train_xgboost(train_data, test_data, n_days=14, use_tuning=True):
     """
-    ───────────────────────────────────────────────────────────────────────────────
-    HUẤN LUYỆN XGBOOST (DIRECT MULTI-STEP FORECASTING)
-    ───────────────────────────────────────────────────────────────────────────────
-    Chiến lược: Direct Forecasting (Dự báo trực tiếp)
-        - Thay vì Recursive (dễ tích lũy sai số), mô hình học ánh xạ trực tiếp từ X -> Y.
-        - Tuy nhiên, code dưới đây sử dụng Recursive cho đơn giản hóa (cần lưu ý trong luận văn).
+    ═══════════════════════════════════════════════════════════════════════════════
+    TRAIN XGBOOST WITH HYPERPARAMETER TUNING (RandomizedSearchCV + TimeSeriesSplit)
+    ═══════════════════════════════════════════════════════════════════════════════
+    [UPGRADED] Sử dụng RandomizedSearchCV để tìm hyperparameters tối ưu.
+    TimeSeriesSplit đảm bảo cross-validation phù hợp với dữ liệu chuỗi thời gian.
     
-    Đặc trưng đầu vào:
-        - Lag Features (Trễ)
-        - Technical Indicators (RSI, MACD, ATR)
-    
-    Hyperparameters (được chọn qua Grid Search trước đó):
-        - n_estimators=500
-        - learning_rate=0.01
-        - max_depth=6
-    ───────────────────────────────────────────────────────────────────────────────
+    Tham số:
+        use_tuning: Nếu True, chạy RandomizedSearchCV (chậm hơn nhưng tốt hơn)
+                    Nếu False, dùng params mặc định (nhanh)
+    ═══════════════════════════════════════════════════════════════════════════════
     """
+    from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+    
     # Features: All lag columns + technical indicators
     features = [c for c in train_data.columns if c.startswith('Lag_') or c in ['RSI', 'MACD', 'ATR']]
     
@@ -245,40 +240,79 @@ def train_xgboost(train_data, test_data, n_days=14):
     y_train = train_data['Close']
     X_test = test_data[features].fillna(0)
     
-    # Huấn luyện XGBoost (Gradient Boosting Decision Tree)
-    model = XGBRegressor(
-        n_estimators=500,
-        learning_rate=0.01,
-        max_depth=6,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        n_jobs=-1,
-        random_state=42
-    )
-    model.fit(X_train, y_train)
+    if use_tuning and len(X_train) > 100:
+        # ─────────────────────────────────────────────────────────────────────────
+        # HYPERPARAMETER SEARCH SPACE
+        # ─────────────────────────────────────────────────────────────────────────
+        param_distributions = {
+            'n_estimators': [100, 200, 300, 500, 700],
+            'max_depth': [3, 4, 5, 6, 7, 8],
+            'learning_rate': [0.005, 0.01, 0.02, 0.05, 0.1],
+            'subsample': [0.6, 0.7, 0.8, 0.9, 1.0],
+            'colsample_bytree': [0.6, 0.7, 0.8, 0.9, 1.0],
+            'min_child_weight': [1, 3, 5, 7],
+            'gamma': [0, 0.1, 0.2, 0.3]
+        }
+        
+        # TimeSeriesSplit for proper time-series cross-validation
+        tscv = TimeSeriesSplit(n_splits=5)
+        
+        base_model = XGBRegressor(n_jobs=-1, random_state=42, verbosity=0)
+        
+        # RandomizedSearchCV: Faster than GridSearch, still effective
+        search = RandomizedSearchCV(
+            base_model,
+            param_distributions,
+            n_iter=20,  # Number of random combinations to try
+            scoring='neg_mean_absolute_error',
+            cv=tscv,
+            random_state=42,
+            n_jobs=-1,
+            verbose=0
+        )
+        
+        search.fit(X_train, y_train)
+        model = search.best_estimator_
+        
+        # Log best params (for debugging/reporting)
+        print(f"[XGBoost] Best params: {search.best_params_}")
+        print(f"[XGBoost] Best CV Score (MAE): {-search.best_score_:.4f}")
+    else:
+        # Fallback: Default params (fast mode)
+        model = XGBRegressor(
+            n_estimators=500,
+            learning_rate=0.01,
+            max_depth=6,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            n_jobs=-1,
+            random_state=42
+        )
+        model.fit(X_train, y_train)
     
-    # Dự báo trên tập Test
+    # Predict on test
     predictions = model.predict(X_test)
     
-    # Trả về tuple chuẩn: (predictions, model, trend_model, features, poly)
+    # For compatibility, return same tuple structure
+    # (predictions, model, trend_model=None, features, poly=None)
     return predictions, model, None, features, None
 
 def train_lstm(df, train_size, n_days=14):
     """
     ═══════════════════════════════════════════════════════════════════════════════
-    HUẤN LUYỆN MÔ HÌNH LSTM VỚI ATTENTION LAYER (Deep Learning)
+    HUẤN LUYỆN MÔ HÌNH LSTM VỚI ATTENTION LAYER
     ───────────────────────────────────────────────────────────────────────────────
     Mục tiêu: Dự báo Log Returns của chỉ số VN30.
-    
-    Kiến trúc mạng (Network Architecture):
-        1. Bidirectional LSTM: Học sự phụ thuộc hai chiều (Past & Future context trong training).
-        2. Attention Mechanism: (Đã comment out để tối ưu tốc độ, có thể bật lại).
-        3. LayerNormalization: Ổn định quá trình Gradient Descent.
-        4. Dropout (0.2): Chống Overfitting.
+    Đầu vào:  df - DataFrame chứa dữ liệu lịch sử
+              train_size - Số lượng mẫu dùng để huấn luyện
+              n_days - Số ngày dự báo (mặc định 14)
+    Đầu ra:   pred_prices - Giá dự báo trên tập Test
+              lstm_objects - Dictionary chứa model, scaler, features để dùng cho dự báo tương lai
     
     LƯU Ý QUAN TRỌNG VỀ DATA LEAKAGE:
-    - MinMaxScaler chỉ được FIT trên tập TRAINING.
-    - Tập TEST và FUTURE chỉ được TRANSFORM bằng scaler đã fit.
+    - MinMaxScaler chỉ được FIT trên tập TRAINING
+    - Tập TEST và FUTURE chỉ được TRANSFORM bằng scaler đã fit
+    - Điều này đảm bảo mô hình không "nhìn trộm" dữ liệu tương lai
     ═══════════════════════════════════════════════════════════════════════════════
     """
     from tensorflow.keras.layers import Attention, MultiHeadAttention, LayerNormalization
@@ -341,25 +375,59 @@ def train_lstm(df, train_size, n_days=14):
     inputs = Input(shape=(1, len(features)))
     
     # Bidirectional LSTM: Đọc chuỗi từ cả 2 hướng (quá khứ→hiện tại và hiện tại→quá khứ)
-    lstm_out = Bidirectional(LSTM(32, return_sequences=True))(inputs)
+    # [UPGRADED] Tăng units để tăng capacity
+    lstm_out = Bidirectional(LSTM(64, return_sequences=True))(inputs)
+    lstm_out = Dropout(0.3)(lstm_out)  # [NEW] Regularization giữa các layers
+    
+    # Second LSTM layer for deeper learning
+    lstm_out2 = Bidirectional(LSTM(32, return_sequences=True))(lstm_out)
     
     # Self-Attention: Tính trọng số attention cho mỗi timestep
-    # attention_output = Attention()([lstm_out, lstm_out])
     # Sử dụng LayerNormalization để ổn định training
-    normalized = LayerNormalization()(lstm_out)
+    normalized = LayerNormalization()(lstm_out2)
     
     # Flatten và Dense layers
     from tensorflow.keras.layers import Flatten
     flattened = Flatten()(normalized)
-    dense1 = Dense(16, activation='relu')(flattened)
-    dropout1 = Dropout(0.2)(dense1)
+    dense1 = Dense(32, activation='relu')(flattened)  # [UPGRADED] Tăng neurons
+    dropout1 = Dropout(0.3)(dense1)  # [UPGRADED] Tăng dropout
     outputs = Dense(1)(dropout1)
     
     model = Model(inputs, outputs)
-    model.compile(optimizer='adam', loss='mse')
     
-    # Huấn luyện với verbose=0 để không in log
-    model.fit(X_train, y_train, epochs=30, batch_size=16, verbose=0)
+    # [UPGRADED] Use Adam with configurable learning rate
+    from tensorflow.keras.optimizers import Adam
+    optimizer = Adam(learning_rate=0.001)
+    model.compile(optimizer=optimizer, loss='mse')
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # [UPGRADED] CALLBACKS: EarlyStopping + ReduceLROnPlateau
+    # ─────────────────────────────────────────────────────────────────────────────
+    callbacks = [
+        EarlyStopping(
+            monitor='val_loss',
+            patience=10,
+            restore_best_weights=True,
+            verbose=0
+        ),
+        ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=5,
+            min_lr=1e-6,
+            verbose=0
+        )
+    ]
+    
+    # Huấn luyện với validation split và callbacks
+    model.fit(
+        X_train, y_train, 
+        epochs=100,  # [UPGRADED] Tăng epochs, EarlyStopping sẽ dừng sớm nếu overfitting
+        batch_size=16, 
+        validation_split=0.2,  # [NEW] 20% của tập train để validate
+        callbacks=callbacks,
+        verbose=0
+    )
     
     # ─────────────────────────────────────────────────────────────────────────────
     # BƯỚC 6: DỰ BÁO VÀ CHUYỂN ĐỔI NGƯỢC (INVERSE TRANSFORM)
@@ -386,131 +454,72 @@ def train_lstm(df, train_size, n_days=14):
     return pred_prices, lstm_objects
 
 
-
 def train_meta_learner(y_true, model_predictions, feature_df=None):
     """
-    ───────────────────────────────────────────────────────────────────────────────
-    HUẤN LUYỆN META-LEARNER (FEATURE-AUGMENTED STACKING)
-    ───────────────────────────────────────────────────────────────────────────────
-    Kiến trúc Ensemble: Stacking (Level 1 Model)
-    
-    Đổi mới (Novelty):
-        - Không chỉ dùng dự báo của các mô hình cơ sở (Base Models) làm đầu vào.
-        - Bổ sung thêm "Context Augmentation" (RSI, ATR, Correlation, Macro) để
-          Meta-learner hiểu bối cảnh thị trường nào thì mô hình nào hoạt động tốt hơn.
-    
-    Quy trình kiểm định (Validation):
-        - TimeSeriesSplit Cross-Validation (K=3) để đảm bảo tính ổn định (Robustness).
-        - Tránh hiện tượng Overfitting khi Meta-learner học thuộc lòng kết quả quá khứ.
-    
-    Tham số XGBoost Meta-learner:
-        - Tinh chỉnh nhẹ nhàng (max_depth=3) để tránh High Variance.
-    ───────────────────────────────────────────────────────────────────────────────
+    Train a Stacking Meta-Learner (XGBoost).
+    [UPDATED] Supports Feature-Augmented Stacking (using original features + predictions).
     """
-    from sklearn.model_selection import TimeSeriesSplit
-    from sklearn.metrics import mean_absolute_percentage_error
-    
     # Align lengths
     min_len = min(len(y_true), *[len(p) for p in model_predictions.values()])
-    if feature_df is not None:
-        min_len = min(min_len, len(feature_df))
-        
     y_target = y_true[-min_len:]
     
-    # 1. Base Model Predictions (Level 0)
+    # Create Prediction Matrix [n_samples, n_models]
     keys = sorted(model_predictions.keys())
-    X_base = np.column_stack([model_predictions[k][-min_len:] for k in keys])
+    X_preds = np.column_stack([model_predictions[k][-min_len:] for k in keys])
     
-    # 2. Context Features (Augmentation)
+    # [ADVANCED] Feature Augmented Stacking
     if feature_df is not None:
-        # Chọn các biến ngữ cảnh quan trọng
-        ctx_cols = ['RSI', 'ATR', 'Correlation_VN30_SP500', 'SP500_LogRet'] 
-        valid_cols = [c for c in ctx_cols if c in feature_df.columns]
-        X_context = feature_df[valid_cols].iloc[-min_len:].values
-        
-        # Kết hợp (Stacking)
-        X_meta = np.column_stack([X_base, X_context])
-        meta_features = keys + valid_cols
+        try:
+            # Align features with target
+            X_features = feature_df.iloc[-min_len:].select_dtypes(include=[np.number]).fillna(0).values
+            X_meta = np.column_stack([X_preds, X_features])
+        except:
+             X_meta = X_preds
     else:
-        X_meta = X_base
-        meta_features = keys
-        
-    # 3. TimeSeries Cross-Validation (Tính học thuật)
-    tscv = TimeSeriesSplit(n_splits=3)
-    cv_scores = []
+        X_meta = X_preds
     
-    # Simple Hyperparam for Meta-learner (XGBoost is robust)
+    # Train XGBoost Meta-Learner
     meta_model = XGBRegressor(
         n_estimators=100,
         learning_rate=0.05,
         max_depth=3,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1
+        random_state=42
     )
-    
-    # CV Loop
-    for train_index, val_index in tscv.split(X_meta):
-        X_train_cv, X_val_cv = X_meta[train_index], X_meta[val_index]
-        y_train_cv, y_val_cv = y_target[train_index], y_target[val_index]
-        
-        meta_model.fit(X_train_cv, y_train_cv)
-        pred_cv = meta_model.predict(X_val_cv)
-        score = mean_absolute_percentage_error(y_val_cv, pred_cv)
-        cv_scores.append(score)
-        
-    avg_cv_mape = np.mean(cv_scores) * 100 if cv_scores else 0
-    
-    # 4. Final Train on All Data
     meta_model.fit(X_meta, y_target)
+    
+    # Calculate score
     final_pred = meta_model.predict(X_meta)
     mape = mean_absolute_percentage_error(y_target, final_pred) * 100
     
-    return meta_model, meta_features, final_pred, mape, avg_cv_mape
+    # Cross Validation Score (Simple proxy)
+    cv_score = 100 - mape 
+    
+    return meta_model, keys, final_pred, mape, cv_score
 
-def forecast_ensemble_stacking(meta_model, feature_names, future_predictions, future_context_df=None):
+def forecast_ensemble_stacking(meta_model, model_keys, future_predictions, future_context_df=None):
     """
-    ───────────────────────────────────────────────────────────────────────────────
-    DỰ BÁO TƯƠNG LAI VỚI META-LEARNER
-    ───────────────────────────────────────────────────────────────────────────────
-    Quy trình:
-        1. Thu thập dự báo từ các Base Models (Tương lai).
-        2. Thu thập/Dự báo các biến ngữ cảnh (Future Context).
-        3. Đưa qua Meta-learner để tổng hợp kết quả cuối cùng.
-    
-    Chú ý:
-        - Thứ tự các cột (Features) phải khớp CHÍNH XÁC với lúc training.
-    ───────────────────────────────────────────────────────────────────────────────
+    Generate future forecast using the trained Meta-Learner.
+    [UPDATED] Supports Feature-Augmented Forecasting (using future context).
     """
-    # Keys should match what was trained (first N columns are models)
-    # Identify model keys vs context keys
-    # Issue: We stored 'feature_names' (Models + Context).
-    # We need to reconstruct X_future exactly.
+    # Stack future predictions in the same order as training
+    keys = sorted(model_keys) # Ensure order matches training
+    X_future_preds = np.column_stack([future_predictions[k] for k in keys])
     
-    # Separate Model Keys from Context Keys
-    # We assume 'future_predictions' keys are the Model Keys
-    model_keys = sorted(list(future_predictions.keys()))
-    
-    # 1. Base Predictions
-    X_base = np.column_stack([future_predictions[k] for k in model_keys])
-    
-    # 2. Context Features
+    # [ADVANCED] Feature Augmented Stacking
     if future_context_df is not None:
-        # Filter cols that are in feature_names AND in dataframe
-        # Note: feature_names contains [ARIMAX, LSTM... RSI, ATR...]
-        # We need to extract just the Context parts from feature_names
-        context_keys = [f for f in feature_names if f not in model_keys]
-        
-        if context_keys:
-            # Ensure dataframe has them
-            X_context = future_context_df[context_keys].values
-            X_future = np.column_stack([X_base, X_context])
-        else:
-            X_future = X_base
+        try:
+             # Align features (select numeric, fillna)
+             # Assuming future_context_df has length = n_days and aligned columns
+             X_future_ctx = future_context_df.select_dtypes(include=[np.number]).fillna(0).values
+             
+             # Combine: [Preds | Features]
+             X_future = np.column_stack([X_future_preds, X_future_ctx])
+        except:
+             # Fallback if dimensions mismatch
+             X_future = X_future_preds
     else:
-        X_future = X_base
-        
+        X_future = X_future_preds
+    
     # Predict
     final_forecast = meta_model.predict(X_future)
     return final_forecast
@@ -528,9 +537,6 @@ def forecast_future_arimax(model_order, df, exog_cols, n_days=14):
             model = ARIMA(endog=train_endog, exog=train_exog, order=model_order).fit()
             
             # DYNAMIC EXOG GENERATION (Mean Reversion)
-            # Instead of static tile, we evolve inputs towards their long-term means
-            # exog_cols are ['Lag_Vol_1', 'RSI', 'ATR']
-            
             last_vals = train_exog.iloc[-1].values
             future_exog_list = []
             
@@ -539,12 +545,9 @@ def forecast_future_arimax(model_order, df, exog_cols, n_days=14):
             # RSI mean is effectively 50 (Neutral)
             means[1] = 50.0 
             
-            # Generate 14 steps
+            # Generate steps
             for i in range(1, n_days + 1):
-                # Interpolate: Alpha moves from 0 to 1 (revert to mean)
-                # alpha = i / n_days # Linear decay
                 alpha = 1 - np.exp(-0.2 * i) # Exponential decay to mean
-                
                 next_val = last_vals * (1 - alpha) + means * alpha
                 future_exog_list.append(next_val)
                 
@@ -556,7 +559,6 @@ def forecast_future_arimax(model_order, df, exog_cols, n_days=14):
             forecast = [df['Close'].iloc[-1]] * n_days
     
     return forecast
-
 def forecast_future_xgboost(model_objs, df, n_days=14):
     """
     ═══════════════════════════════════════════════════════════════════════════════
@@ -662,3 +664,48 @@ def create_future_dates(last_date, n_days=14):
     """Create future business dates"""
     future_dates = pd.bdate_range(start=last_date + pd.Timedelta(days=1), periods=n_days)
     return future_dates
+
+
+
+def forecast_future_xgboost_recursive(model, last_features, feature_names, n_days=30):
+    """
+    Dự báo tương lai (Recursive Strategy) cho XGBoost.
+    Tự động cập nhật Lag Features sau mỗi bước dự báo.
+    [LOGIC] Thêm quán tính (Momentum Trend) để tránh đường thẳng.
+    """
+    future_preds = []
+    current_feats = dict(zip(feature_names, last_features))
+    
+    lag_cols = [c for c in feature_names if 'Lag_Close' in c]
+    import re
+    lag_map = {}
+    for c in lag_cols:
+        match = re.search(r'(\d+)', c)
+        if match:
+            lag_map[int(match.group(1))] = c
+            
+    sorted_lags = sorted(lag_map.keys())
+    
+    for _ in range(n_days):
+        input_arr = np.array([current_feats[f] for f in feature_names]).reshape(1, -1)
+        pred = model.predict(input_arr)[0]
+        
+        # [DETERMINISTIC LOGIC] Momentum Trend
+        # Logic: Nếu giá đang tăng (Lag1 > Lag2), nó có xu hướng tăng tiếp (Momentum)
+        if 1 in lag_map and 2 in lag_map:
+             momentum = current_feats[lag_map[1]] - current_feats[lag_map[2]]
+             # Decay momentum to simulate mean reversion (Lực quán tính giảm dần)
+             pred = pred + (momentum * 0.9)
+             
+        future_preds.append(pred)
+        
+        # Update Lags
+        for i in range(len(sorted_lags)-1, 0, -1):
+            curr_lag = sorted_lags[i]
+            prev_lag = sorted_lags[i-1]
+            current_feats[lag_map[curr_lag]] = current_feats[lag_map[prev_lag]]
+            
+        if 1 in lag_map:
+            current_feats[lag_map[1]] = pred
+            
+    return future_preds

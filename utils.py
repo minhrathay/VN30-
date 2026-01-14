@@ -294,10 +294,45 @@ def format_number(num):
     """Format number for display"""
     return f"{num:,.2f}"
 
+def standardize_column_names(df):
+    """
+    ───────────────────────────────────────────────────────────────────────────────
+    [QUANT UTILS] CHUẨN HÓA TÊN CỘT (AUTO-MAPPING)
+    ───────────────────────────────────────────────────────────────────────────────
+    Tự động nhận diện và đổi tên các cột sang chuẩn tiếng Anh:
+    - Ngày -> Date
+    - Lần cuối -> Close
+    - Mở -> Open
+    - Cao -> High
+    - Thấp -> Low
+    - KL -> Volume
+    """
+    col_map = {
+        'Ngày': 'Date', 'Date': 'Date',
+        'Lần cuối': 'Close', 'Close': 'Close', 'Price': 'Close', 'Last': 'Close', 'Giá': 'Close', 'Đóng cửa': 'Close',
+        'Mở': 'Open', 'Open': 'Open',
+        'Cao': 'High', 'High': 'High',
+        'Thấp': 'Low', 'Low': 'Low',
+        'KL': 'Volume', 'Vol.': 'Volume', 'Volume': 'Volume', 'Khối lượng': 'Volume'
+    }
+    
+    # Rename columns based on map (case-insensitive search)
+    new_cols = {}
+    for col in df.columns:
+        for k, v in col_map.items():
+            if k.lower() == col.lower():
+                new_cols[col] = v
+                break
+    
+    if new_cols:
+        df = df.rename(columns=new_cols)
+        
+    return df
+
 def load_macro_data(df_vn30, sp500_path='SP500.csv', usdvnd_path='USD_VND.csv'):
     """
     ───────────────────────────────────────────────────────────────────────────────
-    NẠP DỮ LIỆU LIÊN THỊ TRƯỜNG (Thực tế hóa)
+    NẠP DỮ LIỆU LIÊN THỊ TRƯỜNG (Thực tế hóa) v2.0
     ───────────────────────────────────────────────────────────────────────────────
     Input:
         df_vn30: DataFrame VN30 chuẩn (có cột Date)
@@ -305,27 +340,14 @@ def load_macro_data(df_vn30, sp500_path='SP500.csv', usdvnd_path='USD_VND.csv'):
         usdvnd_path: Đường dẫn file USD_VND.csv
     
     Logic:
-        - Đọc file CSV ngoài
-        - Merge vào VN30 theo Date (Left Join)
-        - Xử lý lệch ngày (Lễ, Tết, Cuối tuần) bằng ffill (Forward Fill)
+        1. Đọc file & Chuẩn hóa tên cột.
+        2. [CRITICAL] Shift(1) dữ liệu Macro:
+           - Lý do: Thị trường Mỹ đóng cửa vào rạng sáng ngày T (giờ VN).
+           - Do đó, giá Close của SP500 phiên T-1 mới là thông tin khả dụng cho phiên giao dịch T của VN30.
+           - Việc Shift(1) đảm bảo tính nhân quả (Causality) và tránh Look-ahead Bias.
+        3. Merge & Fillna.
     ───────────────────────────────────────────────────────────────────────────────
     """
-    def smart_rename(df, target_col):
-        # Helper to find price column
-        cols = df.columns
-        # Priority map
-        candidates = ['Close', 'Lần cuối', 'Price', 'Giá', 'Last', 'Đóng cửa', 'Adj Close']
-        
-        for cand in candidates:
-            if cand in cols:
-                return df.rename(columns={cand: target_col})
-        
-        # If no strict match, look for contains
-        for c in cols:
-            if any(x in c.lower() for x in ['close', 'price', 'giá', 'cuối']):
-                return df.rename(columns={c: target_col})
-        return df
-
     # Helper for Excel support
     def read_smart(path):
         # 1. Check exact path
@@ -349,54 +371,47 @@ def load_macro_data(df_vn30, sp500_path='SP500.csv', usdvnd_path='USD_VND.csv'):
         # 1. Load S&P 500
         sp500 = read_smart(sp500_path)
         if sp500 is not None:
-            # Tự động nhận diện cột ngày
-            if 'Date' in sp500.columns:
-                sp500['Date'] = pd.to_datetime(sp500['Date'])
-            elif 'Ngày' in sp500.columns:
-                sp500['Date'] = pd.to_datetime(sp500['Ngày'], dayfirst=True)
-            else:
-                 # Try to find date column
-                date_cols = [col for col in sp500.columns if 'date' in col.lower() or 'ngày' in col.lower()]
-                if date_cols:
-                    sp500['Date'] = pd.to_datetime(sp500[date_cols[0]])
-
-            # Đổi tên cột giá
-            sp500 = smart_rename(sp500, 'SP500')
+            # Standardize
+            sp500 = standardize_column_names(sp500)
             
-            if 'SP500' in sp500.columns and 'Date' in sp500.columns:
-                sp500 = sp500[['Date', 'SP500']].set_index('Date')
+            # Ensure Date parsing
+            if 'Date' in sp500.columns:
+                sp500['Date'] = pd.to_datetime(sp500['Date'], dayfirst=True) # Try dayfirst just in case
+            
+            if 'Close' in sp500.columns and 'Date' in sp500.columns:
+                sp500 = sp500[['Date', 'Close']].set_index('Date').sort_index()
                 # Clean numeric
-                if sp500['SP500'].dtype == object:
-                     sp500['SP500'] = sp500['SP500'].astype(str).str.replace(',', '').astype(float)
+                if sp500['Close'].dtype == object:
+                     sp500['Close'] = sp500['Close'].astype(str).str.replace(',', '').astype(float)
+                
+                # [QUANT LOGIC] Shift 1 day to prevent Look-ahead Bias
+                sp500['Close'] = sp500['Close'].shift(1)
+                sp500 = sp500.rename(columns={'Close': 'SP500'})
             else:
                 sp500 = pd.DataFrame()
         else:
-            # print(f"Warning: Không tìm thấy {sp500_path}")
             sp500 = pd.DataFrame()
 
         # 2. Load USD/VND
         usdvnd = read_smart(usdvnd_path)
         if usdvnd is not None:
-            if 'Date' in usdvnd.columns:
-                usdvnd['Date'] = pd.to_datetime(usdvnd['Date'])
-            elif 'Ngày' in usdvnd.columns:
-                usdvnd['Date'] = pd.to_datetime(usdvnd['Ngày'], dayfirst=True)
-            else:
-                 # Try to find date column
-                date_cols = [col for col in usdvnd.columns if 'date' in col.lower() or 'ngày' in col.lower()]
-                if date_cols:
-                    usdvnd['Date'] = pd.to_datetime(usdvnd[date_cols[0]])
-                
-            usdvnd = smart_rename(usdvnd, 'USDVND')
+            usdvnd = standardize_column_names(usdvnd)
             
-            if 'USDVND' in usdvnd.columns and 'Date' in usdvnd.columns:
-                usdvnd = usdvnd[['Date', 'USDVND']].set_index('Date')
-                if usdvnd['USDVND'].dtype == object:
-                     usdvnd['USDVND'] = usdvnd['USDVND'].astype(str).str.replace(',', '').astype(float)
+            if 'Date' in usdvnd.columns:
+                usdvnd['Date'] = pd.to_datetime(usdvnd['Date'], dayfirst=True)
+                
+            if 'Close' in usdvnd.columns and 'Date' in usdvnd.columns:
+                usdvnd = usdvnd[['Date', 'Close']].set_index('Date').sort_index()
+                if usdvnd['Close'].dtype == object:
+                     usdvnd['Close'] = usdvnd['Close'].astype(str).str.replace(',', '').astype(float)
+                
+                # Tỷ giá thường cập nhật sáng sớm, có thể dùng ngay hoặc shift tùy nguồn.
+                # Để an toàn, cũng shift 1 nếu dữ liệu là end-of-day.
+                usdvnd['Close'] = usdvnd['Close'].shift(1)
+                usdvnd = usdvnd.rename(columns={'Close': 'USDVND'})
             else:
                  usdvnd = pd.DataFrame()
         else:
-            # print(f"Warning: Không tìm thấy {usdvnd_path}")
             usdvnd = pd.DataFrame()
 
         # 3. Merge vào VN30
@@ -433,3 +448,7 @@ def load_macro_data(df_vn30, sp500_path='SP500.csv', usdvnd_path='USD_VND.csv'):
             df_out['USDVND'] = 24000 # Default fallback
             
         return df_out
+
+    except Exception as e:
+        # print(f"Lỗi nạp dữ liệu Macro: {e}")
+        return df_vn30

@@ -18,12 +18,30 @@ from utils import (
 from models import (
     train_arimax, train_xgboost, train_lstm,
     train_meta_learner, forecast_ensemble_stacking,
-    forecast_future_arimax, forecast_future_xgboost, 
+    forecast_future_arimax, forecast_future_xgboost_recursive, 
     forecast_future_lstm, create_future_dates,
     add_rolling_features, add_macro_features  # Feature Engineering functions
 )
 
 warnings.filterwarnings('ignore')
+
+# ==============================================================================
+# [CRITICAL] ENFORCE GLOBAL DETERMINISM
+# ==============================================================================
+# Set random seeds at APPLICATION LEVEL to guarantee reproducible results
+# across all library calls (NumPy, TensorFlow, XGBoost, Scikit-learn)
+import random
+import tensorflow as tf
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+# For TensorFlow deterministic ops (GPU)
+try:
+    tf.config.experimental.enable_op_determinism()
+except:
+    pass # Older TF versions may not have this
+# ==============================================================================
 
 # -----------------------------------------------------------------------------
 # 1. APP CONFIGURATION & FINTECH STYLING
@@ -212,6 +230,11 @@ with st.sidebar:
         
     st.markdown("---")
     
+    
+
+             
+
+    
     # Models Section
     st.caption("MODEL CONFIGURATION")
     models_selected = []
@@ -240,8 +263,13 @@ with st.sidebar:
 try:
     df = load_data(uploaded_file=uploaded_file)
     
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sp500_path = os.path.join(current_dir, 'SP500.csv')
+    usdvnd_path = os.path.join(current_dir, 'USD_VND.csv')
+    
     # --- PHASE 2: MACRO DATA INTEGRATION ---
-    df = load_macro_data(df)
+    df = load_macro_data(df, sp500_path=sp500_path, usdvnd_path=usdvnd_path)
     
     # --- PHASE 3: FEATURE ENGINEERING ---
     df = add_macro_features(df)
@@ -269,7 +297,7 @@ try:
     m1, m2, m3, m4 = st.columns(4)
     
     m1.metric("VN30 Index", f"{last_close:,.2f}", f"{day_pct:+.2f}%")
-    m2.metric("Market Volatility", f"{volatility:,.2f}", help="Average True Range (14)")
+    m2.metric("Volatility (ATR)", f"{volatility:,.2f} pts", help="Average Daily Range (Points)")
     m3.metric("Models Active", f"{len(models_selected)} / 4", "Ready")
     m4.metric("Forecast Horizon", f"{n_days} Days", "Forward")
     
@@ -298,14 +326,18 @@ if run_btn:
         # Train Models
         try:
             if "ARIMAX" in models_selected:
-                pred, model = train_arimax(train_data, test_data)
+                # Fast Mode = True for Dashboard Responsiveness
+                pred, model = train_arimax(train_data, test_data, fast_mode=True)
                 st.session_state.models['ARIMAX'] = model
                 st.session_state.history_preds['ARIMAX'] = pred
                 
             if "XGBoost" in models_selected:
-                pred, model, trend_model, features, poly = train_xgboost(train_data, test_data, n_days)
-                # Store all components needed for future forecast
-                st.session_state.models['XGBoost'] = (model, trend_model, features, poly)
+                # Train with recursive logic support
+                pred, model, _, features, _ = train_xgboost(train_data, test_data, n_days)
+                # Store (model, last_features_array, feature_names_list)
+                # Convert last row of test data to array for recursion
+                last_features = test_data[features].iloc[-1].values
+                st.session_state.models['XGBoost'] = (model, last_features, features)
                 st.session_state.history_preds['XGBoost'] = pred
                 
             if "LSTM" in models_selected:
@@ -314,25 +346,61 @@ if run_btn:
                 st.session_state.history_preds['LSTM'] = pred
                 
             if "Ensemble" in models_selected and len(st.session_state.history_preds) >= 2:
-                # STACKING META-LEARNER IMPLEMENTATION
-                preds = st.session_state.history_preds.copy() # Key: Model Name, Value: Prediction Array
+                # ... (Keep existing Ensemble Logic) ...
+                preds = st.session_state.history_preds.copy() 
                 
                 # Align with y_true
                 min_len = min(len(p) for p in preds.values())
                 y_true = test_data['Close'].values[:min_len]
                 
-                # Filter preds to match min_len
                 aligned_preds = {k: v[:min_len] for k, v in preds.items()}
                 
-                # Train Meta-Learner (Feature Augmented)
-                meta_model, model_keys, ens_pred, mape, cv_score = train_meta_learner(y_true, aligned_preds, feature_df=test_data)
+                # Train Meta-Learner
+                # [CRITICAL] Use ONLY specific context features that we can project/simulate for future
+                ctx_cols = ['RSI', 'ATR', 'Correlation_VN30_SP500', 'SP500_LogRet']
+                # Ensure cols exist
+                valid_ctx_cols = [c for c in ctx_cols if c in test_data.columns]
                 
-                st.session_state.models['Ensemble'] = (meta_model, model_keys) # Store trained meta-model
+                meta_model, model_keys, ens_pred, mape, cv_score = train_meta_learner(
+                    y_true, 
+                    aligned_preds, 
+                    feature_df=test_data[valid_ctx_cols]
+                )
+                
+                st.session_state.models['Ensemble'] = (meta_model, model_keys) 
                 st.session_state.history_preds['Ensemble'] = ens_pred
                 
-                # Show CV Score (Robustness)
-                st.info(f"Ensemble Cross-Validation Score (MAPE): {cv_score:.2f}% | Test Score: {mape:.2f}%")
-                # XGBoost uses feature_importances_ instead of coef_
+                # Calculate Trading Performance (Win Rate & Total Return)
+                # Logic: Buy if Forecast > Previous Close
+                def calculate_trading_performance(y_true, y_pred):
+                    # Directional Accuracy (Win Rate)
+                    direction_true = np.sign(np.diff(y_true))
+                    direction_pred = np.sign(np.diff(y_pred))
+                    # Align lengths (diff reduces size by 1)
+                    matches = (direction_true == direction_pred)
+                    win_rate = np.mean(matches) * 100
+                    
+                    # Total Return (Simple Strategy: Long only)
+                    # Buy at Close[t], Sell at Close[t+1] if Pred[t+1] > Close[t]
+                    # Here we simulate on Test set
+                    returns = np.diff(y_true) / y_true[:-1]
+                    signals = (np.diff(y_pred) > 0).astype(int)
+                    # Shift signals to match T+1 return (Signal calculated at T effective for T->T+1)
+                    # Here aligned: diff[i] is Return(i -> i+1), signal[i] is Pred(i+1) > Pred(i) (Trend following)
+                    # Better logic: Signal = Pred[i+1] > Actual[i] (but Actual[i] is known)
+                    
+                    strategy_returns = returns * signals
+                    total_return = np.prod(1 + strategy_returns) - 1
+                    return win_rate, total_return * 100
+
+                try:
+                    win_rate, total_ret = calculate_trading_performance(y_true, ens_pred)
+                    st.session_state.trading_metrics = {'Win Rate': win_rate, 'Total Return': total_ret}
+                except:
+                    st.session_state.trading_metrics = {'Win Rate': 0, 'Total Return': 0}
+
+                st.info(f"Ensemble CV Score: {cv_score:.2f}% | Test MAPE: {mape:.2f}% | Win Rate: {st.session_state.trading_metrics['Win Rate']:.1f}%")
+                
                 try:
                     importances = meta_model.feature_importances_
                     total_imp = np.sum(importances)
@@ -361,7 +429,12 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
     if 'ARIMAX' in st.session_state.models:
         future_results['ARIMAX'] = forecast_future_arimax(st.session_state.models['ARIMAX'], df, ['Lag_Vol_1', 'RSI', 'ATR'], n_days)
     if 'XGBoost' in st.session_state.models:
-        future_results['XGBoost'] = forecast_future_xgboost(st.session_state.models['XGBoost'], df, n_days)
+        xgb_tuple = st.session_state.models['XGBoost']
+        if len(xgb_tuple) == 3: # (model, last_features, feature_names)
+            model, last_feats, feat_names = xgb_tuple
+            future_results['XGBoost'] = forecast_future_xgboost_recursive(model, last_feats, feat_names, n_days)
+        else: # Legacy/Fallback
+             future_results['XGBoost'] = [0] * n_days
     if 'LSTM' in st.session_state.models:
          future_results['LSTM'] = forecast_future_lstm(st.session_state.models['LSTM'], df, n_days)
     
@@ -378,9 +451,13 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
         if 'Ensemble' in st.session_state.models:
              meta_obj = st.session_state.models['Ensemble']
              if isinstance(meta_obj, tuple) and len(meta_obj) == 2:
-                 meta_model, model_keys = meta_obj
-                 valid_keys = [k for k in model_keys if k in future_results]
-                 if len(valid_keys) == len(model_keys):
+                 meta_model, all_features = meta_obj
+                 # Filter valid models (intersection of trained features and available forecasts)
+                 # Note: all_features includes [Model A, Model B, RSI, ATR...]
+                 # We only expect Models to be in future_results
+                 
+                 # Logic: Proceed if we have at least 2 base models available
+                 if len(future_results) >= 2:
                      # GENERATE FUTURE CONTEXT (Simple Mean Reversion Projection)
                      # Needed for Feature-Augmented Stacking
                      future_context_dict = {}
@@ -401,173 +478,63 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
                                  val = last_val * (1 - alpha) + mean_val * alpha
                                  path.append(val)
                              future_context_dict[col] = path
-                         else:
-                             future_context_dict[col] = [0] * n_days
+
+
                      
                      future_ctx_df = pd.DataFrame(future_context_dict)
                      
-                     future_results['Ensemble'] = forecast_ensemble_stacking(meta_model, model_keys, future_results, future_context_df=future_ctx_df)
+                     future_results['Ensemble'] = forecast_ensemble_stacking(meta_model, all_features, future_results, future_context_df=future_ctx_df)
         
         # Fallback to weights if Stacking fails (or just to keep flow valid)
 
         # --- Display Ensemble Weights (Donut Chart) ---
         with st.expander("📊 Show/Hide Model Analysis", expanded=False):
-            # Create 4 tabs for different analysis views
-            tab1, tab2, tab2_b, tab3 = st.tabs(["Ensemble Weights", "Feature Importance", "Trading Simulation (Thesis)", "Metrics Comparison"])
+            # Create 2 tabs for different analysis views
+            tab1, tab3 = st.tabs(["Ensemble Weights", "Metrics Comparison"])
             
             # ═══════════════════════════════════════════════════════════════════
-            # TAB 1: Ensemble Contribution Weights (Donut Chart)
+            # TAB 1: Ensemble Contribution Weights (Premium Donut Chart)
             # ═══════════════════════════════════════════════════════════════════
             with tab1:
                 w_df = pd.DataFrame(list(st.session_state.weights.items()), columns=['Model', 'Weight'])
                 w_df = w_df[w_df['Weight'] > 0] # Show only active models
                 
+                # Sort by weight for better visual
+                w_df = w_df.sort_values('Weight', ascending=False)
+                
+                # Custom color map for specific models to ensure consistency
+                model_colors = {
+                    'ARIMAX': '#f43f5e',   # Rose
+                    'XGBoost': '#3b82f6',  # Blue
+                    'LSTM': '#8b5cf6',     # Violet
+                    'Ensemble': '#10b981'  # Emerald
+                }
+                colors = [model_colors.get(m, '#94a3b8') for m in w_df['Model']]
+                
                 w_fig = go.Figure(data=[go.Pie(
                     labels=w_df['Model'], 
                     values=w_df['Weight'], 
-                    hole=.4,
-                    marker=dict(colors=[chart_colors.get(m, '#94a3b8') for m in w_df['Model']])
+                    hole=.6, # Thinner ring looks more modern
+                    textinfo='label+percent',
+                    textposition='outside', # Clean look
+                    marker=dict(colors=colors, line=dict(color='#ffffff', width=2)),
+                    pull=[0.05 if w == w_df['Weight'].max() else 0 for w in w_df['Weight']] # Highlight top model
                 )])
+                
                 w_fig.update_layout(
-                    title_text="Ensemble Contribution Weights",
-                    height=300,
-                    margin=dict(l=0,r=0,t=30,b=0),
-                    font=dict(family="Inter, sans-serif")
+                    title_text="<b>Ensemble Model Contribution</b>",
+                    title_x=0.5,
+                    height=350,
+                    margin=dict(l=20,r=20,t=50,b=20),
+                    font=dict(family="Inter, sans-serif", size=14),
+                    showlegend=False, # Labels are outside, cleaner without legend
+                    annotations=[dict(text=f"{len(w_df)} Models", x=0.5, y=0.5, font_size=20, showarrow=False)]
                 )
                 st.plotly_chart(w_fig, use_container_width=True)
-            
-            # ═══════════════════════════════════════════════════════════════════
-            # TAB 2: Feature Importance (XGBoost)
-            # ═══════════════════════════════════════════════════════════════════
-            # ═══════════════════════════════════════════════════════════════════
-            # TAB 2: Feature Importance (Grouped - Thesis Level)
-            # ═══════════════════════════════════════════════════════════════════
-            with tab2:
-                if 'XGBoost' in st.session_state.models:
-                    xgb_model = st.session_state.models['XGBoost'][0]
-                    feature_names = st.session_state.models['XGBoost'][2]
-                    
-                    # 1. Detailed Importance
-                    imp_df = pd.DataFrame({
-                        'Feature': feature_names,
-                        'Importance': xgb_model.feature_importances_
-                    }).sort_values('Importance', ascending=False)
-                    
-                    # 2. Grouped Importance (Thesis Requirement)
-                    # Define Groups
-                    groups = {'Technical': 0, 'Macro (Inter-market)': 0, 'Lagged Attributes': 0}
-                    
-                    for idx, row in imp_df.iterrows():
-                        feat = row['Feature']
-                        val = row['Importance']
-                        
-                        if 'Lag' in feat:
-                            groups['Lagged Attributes'] += val
-                        elif any(x in feat for x in ['SP500', 'USDVND', 'Correlation']):
-                            groups['Macro (Inter-market)'] += val
-                        else:
-                            groups['Technical'] += val
-                            
-                    # Display Charts
-                    c_grp, c_det = st.columns([1, 1])
-                    
-                    with c_grp:
-                        st.markdown("##### Contribution by Category")
-                        grp_df = pd.DataFrame(list(groups.items()), columns=['Group', 'Importance'])
-                        fig_grp = go.Figure(data=[go.Pie(labels=grp_df['Group'], values=grp_df['Importance'], hole=.3)])
-                        fig_grp.update_layout(height=300, margin=dict(t=0,b=0,l=0,r=0), font=dict(family="Inter"))
-                        st.plotly_chart(fig_grp, use_container_width=True)
-                        
-                    with c_det:
-                        st.markdown("##### Top 10 Specific Features")
-                        top_df = imp_df.head(10).sort_values('Importance', ascending=True)
-                        fig_det = go.Figure(go.Bar(
-                            x=top_df['Importance'], y=top_df['Feature'], orientation='h',
-                            marker=dict(color='#3b82f6')
-                        ))
-                        fig_det.update_layout(height=300, margin=dict(t=0,b=0,l=0,r=0), font=dict(family="Inter"), yaxis_title="")
-                        st.plotly_chart(fig_det, use_container_width=True)
-                    
-                    st.caption("💡 **XAI Insight:** Phân loại cho thấy tầm quan trọng của dữ liệu quá khứ (Lagged) so với tín hiệu kỹ thuật (Technical) và vĩ mô (Macro).")
-                else:
-                    st.info("Chưa có XGBoost model. Hãy chạy phân tích với XGBoost được chọn.")
-            
-            # ═══════════════════════════════════════════════════════════════════
-            # TAB 2B: Trading Simulation (Thesis Request)
-            # ═══════════════════════════════════════════════════════════════════
-            with tab2_b:
-                if 'Ensemble' in st.session_state.history_preds:
-                    st.subheader("🎓 Giả lập Giao dịch (Backtest Brief)")
-                    st.caption("Chiến lược: MUA nếu Dự báo ngày mai > Giá hiện tại + 0.5%. BÁN/GIỮ nếu ngược lại.")
-                    
-                    ens_preds = st.session_state.history_preds['Ensemble']
-                    min_len = min(len(y_true), len(ens_preds))
-                    
-                    if min_len > 1:
-                        # Vectors
-                        prices = y_true[-min_len:]
-                        
-                        # Generate signals based on PREDICTION (not peeking future actuals)
-                        # We simulate "Day T" decision for "Day T+1"
-                        signals = []
-                        capital = 100_000_000 # 100M VND
-                        cash = capital
-                        shares = 0
-                        portfolio_history = []
-                        
-                        # Loop through backtest period
-                        for i in range(min_len - 1):
-                            curr_price = prices[i]
-                            # Pred for next day (i+1) available at day i?
-                            # history_preds is aligned with y_true.
-                            # So ens_preds[i] corresponds to prediction for date[i].
-                            # Actually, normally preds[i] is forecast for time i made at i-1.
-                            
-                            # Let's assume ens_preds[i] is the *forecasted price* for time i.
-                            # To trade at time i-1, we used forecast for i.
-                            
-                            # Strategy:
-                            # At close of day i-1, we see forecast for day i.
-                            # If Forecast(i) > Close(i-1) * 1.005 -> Buy at Open(i) ~ Close(i-1)
-                            
-                            # Valid index check
-                            if i == 0: continue
-                            
-                            prev_close = prices[i-1]
-                            forecast_today = ens_preds[i]
-                            
-                            action = "HOLD"
-                            if forecast_today > prev_close * 1.005:
-                                # Signal BUY
-                                if cash > 0:
-                                    shares = cash / prev_close
-                                    cash = 0
-                                    action = "BUY"
-                            elif forecast_today < prev_close:
-                                # Signal SELL
-                                if shares > 0:
-                                    cash = shares * prev_close
-                                    shares = 0
-                                    action = "SELL"
-                            
-                            # Portfolio Value
-                            port_val = cash + (shares * prices[i])
-                            portfolio_history.append(port_val)
-                        
-                        # Final Value
-                        final_val = portfolio_history[-1] if portfolio_history else capital
-                        return_pct = ((final_val - capital) / capital) * 100
-                        
-                        # Display
-                        c1, c2 = st.columns(2)
-                        c1.metric("Initial Capital", f"{capital:,.0f} VND")
-                        c2.metric("Final Value", f"{final_val:,.0f} VND", f"{return_pct:+.2f}%")
-                        
-                        # Chart
-                        st.line_chart(portfolio_history)
-                        st.info("Lưu ý: Mô phỏng đơn giản không bao gồm phí giao dịch.")
-                else:
-                    st.warning("Cần chạy mô hình Ensemble để giả lập.")
+                
+                st.caption("✨ **AI Insight:** Weights represent Meta-Learner's confidence in each model under current market conditions.")
+
+
 
             # ═══════════════════════════════════════════════════════════════════
             # TAB 3: Error Analysis / Metrics Comparison Table
@@ -606,14 +573,14 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
                     st.dataframe(metrics_df, use_container_width=True, hide_index=True)
                     
                     st.caption("""
-                    **Giải thích các chỉ số:**
-                    - **MSE/RMSE:** Mean Squared Error - Giá trị càng thấp càng tốt
-                    - **MAE:** Mean Absolute Error - Sai số tuyệt đối trung bình
-                    - **MAPE:** Mean Absolute Percentage Error - % sai số, dễ so sánh giữa các mô hình
-                    - **R²:** Coefficient of Determination - Gần 1 là tốt nhất
+                    **Metrics Explanation:**
+                    - **MSE/RMSE:** Mean Squared Error - Lower is better
+                    - **MAE:** Mean Absolute Error - Average absolute deviation
+                    - **MAPE:** Mean Absolute Percentage Error - Easier to compare across models
+                    - **R²:** Coefficient of Determination - Closer to 1 is better
                     """)
                 else:
-                    st.info("Chưa có dữ liệu backtest. Hãy chạy phân tích trước.")
+                    st.info("No backtest data available. Please run analysis first.")
 
     # Plot - Premium Fintech Aesthetic
     fig = go.Figure()

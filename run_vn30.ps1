@@ -1,4 +1,7 @@
 $venvPath = "C:\Users\Admin\.gemini\antigravity\scratch\vn30_env"
-$scriptPath = "C:\Users\Admin\.gemini\antigravity\scratch\vn30_forecast_fixed.py"
-Write-Host "Starting VN30 Forecast..." -ForegroundColor Cyan
-& "$venvPath\Scripts\python.exe" $scriptPath
+
+Write-Host "Starting VN30 Analytics Dashboard..." -ForegroundColor Cyan
+Write-Host "Installing/Verifying Dependencies..." -ForegroundColor Gray
+& "$venvPath\Scripts\pip" install -r requirements.txt
+Write-Host "Launching App..." -ForegroundColor Green
+& "$venvPath\Scripts\streamlit" run app.py
