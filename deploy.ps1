@@ -2,7 +2,7 @@
 # Make sure you have Git installed and you are logged in.
 
 Write-Host "Initializing Git Repository..."
-diff -ErrorAction SilentlyContinue .gitignore .gitignore_backup
+Compare-Object -ErrorAction SilentlyContinue .gitignore .gitignore_backup
 if (-not (Test-Path .gitignore)) {
     Write-Host "Creating .gitignore..."
     Set-Content .gitignore "__pycache__/`n*.pyc`nvn30_env/"

@@ -20,7 +20,12 @@ from models import (
     train_meta_learner, forecast_ensemble_stacking,
     forecast_future_arimax, forecast_future_xgboost_recursive, 
     forecast_future_lstm, create_future_dates,
-    add_rolling_features, add_macro_features  # Feature Engineering functions
+    add_rolling_features, add_macro_features,  # Feature Engineering functions
+    # GARCH & Probabilistic Forecast
+    fit_garch_model, forecast_volatility_garch, 
+    detect_market_regime, forecast_probabilistic_ensemble,
+    # Technical Score System (NEW)
+    calculate_technical_score
 )
 
 warnings.filterwarnings('ignore')
@@ -227,35 +232,46 @@ with st.sidebar:
         uploaded_file = st.file_uploader("CSV File", type=['csv'], label_visibility="collapsed")
     else:
         uploaded_file = None
-        
-    st.markdown("---")
-    
-    
-
-             
-
-    
-    # Models Section
-    st.caption("MODEL CONFIGURATION")
-    models_selected = []
-    
-    m_col1, m_col2 = st.columns(2)
-    with m_col1:
-        if st.checkbox("ARIMAX", value=True): models_selected.append("ARIMAX")
-        if st.checkbox("LSTM", value=True): models_selected.append("LSTM")
-    with m_col2:
-        if st.checkbox("XGBoost", value=True): models_selected.append("XGBoost")
-        if st.checkbox("Ensemble", value=True): models_selected.append("Ensemble")
-        
-    st.markdown("---")
-    
-    # Settings Section
-    st.caption("FORECAST SETTINGS")
-    n_days = st.slider("Horizon (Days)", 7, 30, 14)
-    split_pct = st.slider("Training Split", 70, 95, 95)
     
     st.markdown("###")
-    run_btn = st.button("RUN ANALYSIS", type="primary")
+    run_btn = st.button("RUN ANALYSIS", type="primary", use_container_width=True)
+    
+    st.markdown("---")
+    
+    # System Info
+    st.caption("SYSTEM INFO")
+    st.markdown("""
+    | Parameter | Value |
+    |-----------|-------|
+    | Forecast Horizon | **7 days** |
+    | Training Split | **95%** |
+    | Models | **Ensemble** |
+    """)
+    
+    st.markdown("---")
+    
+    # Models Info
+    st.caption("ACTIVE MODELS")
+    st.markdown("""
+    ✅ ARIMAX (Time Series)  
+    ✅ XGBoost (Gradient Boosting)  
+    ✅ LSTM (Deep Learning)  
+    ✅ Ensemble (Weighted Combination)
+    """)
+    
+    st.markdown("---")
+    
+    # About Section
+    st.caption("ABOUT")
+    st.markdown("""
+    **VN30 Forecasting System**  
+    Chuyên đề tốt nghiệp - UEF 2025  
+    """)
+    
+    # All models always enabled
+    models_selected = ["ARIMAX", "LSTM", "XGBoost", "Ensemble"]
+    n_days = 7
+    split_pct = 95
 
 # -----------------------------------------------------------------------------
 # 4. LOAD DATA & SUMMARY RIBBON
@@ -447,43 +463,43 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
     }
     
     if 'weights' in st.session_state and len(future_results) >= 2:
-        # Calculate Stacking Forecast
-        if 'Ensemble' in st.session_state.models:
-             meta_obj = st.session_state.models['Ensemble']
-             if isinstance(meta_obj, tuple) and len(meta_obj) == 2:
-                 meta_model, all_features = meta_obj
-                 # Filter valid models (intersection of trained features and available forecasts)
-                 # Note: all_features includes [Model A, Model B, RSI, ATR...]
-                 # We only expect Models to be in future_results
-                 
-                 # Logic: Proceed if we have at least 2 base models available
-                 if len(future_results) >= 2:
-                     # GENERATE FUTURE CONTEXT (Simple Mean Reversion Projection)
-                     # Needed for Feature-Augmented Stacking
-                     future_context_dict = {}
-                     
-                     # Features to project: RSI, ATR, Correlation, SP500_LogRet
-                     # We use last known value and decay to mean
-                     ctx_cols = ['RSI', 'ATR', 'Correlation_VN30_SP500', 'SP500_LogRet']
-                     
-                     for col in ctx_cols:
-                         if col in df.columns:
-                             last_val = df[col].iloc[-1]
-                             mean_val = df[col].mean()
-                             # Create path: Evolve from Last -> Mean over n_days
-                             # Exponential decay
-                             path = []
-                             for i in range(1, n_days + 1):
-                                 alpha = 1 - np.exp(-0.1 * i)
-                                 val = last_val * (1 - alpha) + mean_val * alpha
-                                 path.append(val)
-                             future_context_dict[col] = path
-
-
-                     
-                     future_ctx_df = pd.DataFrame(future_context_dict)
-                     
-                     future_results['Ensemble'] = forecast_ensemble_stacking(meta_model, all_features, future_results, future_context_df=future_ctx_df)
+        # ═══════════════════════════════════════════════════════════════════════
+        # NEW: GARCH-BASED PROBABILISTIC ENSEMBLE FORECAST
+        # ═══════════════════════════════════════════════════════════════════════
+        
+        # Step 1: Fit GARCH model for volatility forecasting
+        garch_result, _ = fit_garch_model(df)
+        
+        # Step 2: Forecast volatility for future days
+        if garch_result is not None:
+            garch_vol = forecast_volatility_garch(garch_result, n_days)
+        else:
+            # Fallback: use historical volatility scaled by sqrt(t)
+            hist_vol = df['Close'].pct_change().std()
+            garch_vol = np.array([hist_vol * np.sqrt(t+1) for t in range(n_days)])
+        
+        # Step 3: Detect current market regime
+        regime_info = detect_market_regime(df, lookback=20)
+        
+        # Step 4: Calculate Technical Score for trend direction
+        tech_score, tech_direction, tech_drift, tech_details = calculate_technical_score(df)
+        
+        # Step 5: Generate probabilistic forecast with GARCH + Technical Drift
+        prob_forecast = forecast_probabilistic_ensemble(
+            base_forecasts=future_results,
+            garch_vol=garch_vol,
+            last_price=df['Close'].iloc[-1],
+            regime_info=regime_info,
+            technical_drift=tech_drift,  # NEW: Apply technical indicator direction
+            n_simulations=500,
+            n_days=n_days
+        )
+        
+        # Store for chart rendering
+        st.session_state.prob_forecast = prob_forecast
+        st.session_state.regime_info = regime_info
+        st.session_state.tech_score = tech_score
+        st.session_state.tech_direction = tech_direction
         
         # Fallback to weights if Stacking fails (or just to keep flow valid)
 
@@ -531,8 +547,6 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
                     annotations=[dict(text=f"{len(w_df)} Models", x=0.5, y=0.5, font_size=20, showarrow=False)]
                 )
                 st.plotly_chart(w_fig, use_container_width=True)
-                
-                st.caption("✨ **AI Insight:** Weights represent Meta-Learner's confidence in each model under current market conditions.")
 
 
 
@@ -580,7 +594,7 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
                     - **R²:** Coefficient of Determination - Closer to 1 is better
                     """)
                 else:
-                    st.info("No backtest data available. Please run analysis first.")
+                    pass  # No message needed
 
     # Plot - Premium Fintech Aesthetic
     fig = go.Figure()
@@ -596,103 +610,132 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
         hovertemplate='<b>Historical</b><br>Date: %{x|%d-%b-%Y}<br>Close: %{y:,.2f}<extra></extra>' 
     ))
     
-    # 2. Forecast Lines
-    for model_name, preds in future_results.items():
-        # ENSEMBLE: The "Hero" Line + Confidence Bands
-        if model_name == 'Ensemble':
-            # Calculate Confidence Bands based on RMSE (Academic Requirement)
-            ensemble_rmse = 0
-            # Retrieve validation RMSE if available
-            if 'Ensemble' in st.session_state.history_preds:
-                # Re-calculate RMSE on the fly to be safe
-                hist_preds = st.session_state.history_preds['Ensemble']
-                min_len = min(len(df), len(hist_preds))
-                if min_len > 0:
-                     # Use last N points for RMSE where we have preds
-                     # Note: history_preds are aligned with test_data
-                     y_val = df['Close'].iloc[-min_len:].values
-                     ensemble_rmse = np.sqrt(np.mean((y_val - hist_preds[-min_len:])**2))
-            
-            # Fallback to ATR if RMSE is 0 (or not available)
-            if ensemble_rmse == 0 or np.isnan(ensemble_rmse):
-                 ensemble_rmse = df['ATR'].iloc[-20:].mean() if 'ATR' in df.columns else df['Close'].pct_change().std() * df['Close'].iloc[-1]
-            
-            # Band width increases over time (uncertainty grows with square root of time)
-            # Width(t) = RMSE * sqrt(t)
-            time_steps = np.arange(1, len(preds) + 1)
-            band_widths = ensemble_rmse * np.sqrt(time_steps)
-            
-            upper_band = preds + band_widths
-            lower_band = preds - band_widths
-            
-            # Add Upper Bound (invisible line for fill reference)
-            fig.add_trace(go.Scatter(
-                x=future_dates, y=upper_band,
-                mode='lines',
-                line=dict(width=0),
-                showlegend=False,
-                hoverinfo='skip',
-                name='Upper Bound'
-            ))
-            
-            # Add Lower Bound with fill to upper
-            fig.add_trace(go.Scatter(
-                x=future_dates, y=lower_band,
-                mode='lines',
-                line=dict(width=0),
-                fill='tonexty',
-                fillcolor='rgba(16, 185, 129, 0.15)',  # Light green
-                showlegend=False,
-                hoverinfo='skip',
-                name='Confidence Band'
-            ))
-            
-            # Main Ensemble Line (on top) - Solid, thin, no markers
-            fig.add_trace(go.Scatter(
-                x=future_dates,
-                y=preds,
-                mode='lines',  # No markers
-                name=f'{model_name} Prediction',
-                line=dict(color='#10b981', width=2),  # Solid line, thinner
-                hovertemplate=f'<b>{model_name}</b><br>Date: %{{x|%d-%b-%Y}}<br>Value: %{{y:,.2f}}<br>Range: {lower_band[0]:,.0f} - {upper_band[0]:,.0f}<extra></extra>'
-            ))
-            
-            # Add Target Price Annotation (Bubble)
-            last_pred_val = preds[-1]
-            last_pred_date = future_dates[-1]
-            fig.add_annotation(
-                x=last_pred_date, y=last_pred_val,
-                text=f"Target: {last_pred_val:,.0f}",
-                showarrow=True,
-                arrowhead=2, arrowsize=1, arrowwidth=2,
-                arrowcolor='#10b981',
-                ax=0, ay=-40,
-                bgcolor="#10b981",
-                bordercolor="#10b981",
-                font=dict(color="white", size=12, family="Inter")
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # 2. PROBABILISTIC FORECAST FAN CHART (GARCH-Enhanced)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    
+    # Check if probabilistic forecast is available
+    if 'prob_forecast' in st.session_state:
+        pf = st.session_state.prob_forecast
+        
+        # ─────────────────────────────────────────────────────────────────────────
+        # LAYER 1: Outer Band (10th - 90th Percentile) - Lightest
+        # ─────────────────────────────────────────────────────────────────────────
+        fig.add_trace(go.Scatter(
+            x=future_dates, y=pf['upper_90'],
+            mode='lines',
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo='skip',
+            name='90th Percentile'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=future_dates, y=pf['lower_10'],
+            mode='lines',
+            line=dict(width=0),
+            fill='tonexty',
+            fillcolor='rgba(16, 185, 129, 0.1)',  # Very light green
+            showlegend=False,
+            hoverinfo='skip',
+            name='10th-90th Band'
+        ))
+        
+        # ─────────────────────────────────────────────────────────────────────────
+        # LAYER 2: Inner Band (25th - 75th Percentile) - Medium
+        # ─────────────────────────────────────────────────────────────────────────
+        fig.add_trace(go.Scatter(
+            x=future_dates, y=pf['upper_75'],
+            mode='lines',
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo='skip',
+            name='75th Percentile'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=future_dates, y=pf['lower_25'],
+            mode='lines',
+            line=dict(width=0),
+            fill='tonexty',
+            fillcolor='rgba(16, 185, 129, 0.2)',  # Medium green
+            showlegend=False,
+            hoverinfo='skip',
+            name='25th-75th Band'
+        ))
+        
+        # ─────────────────────────────────────────────────────────────────────────
+        # LAYER 3: Median Line (50th Percentile) - Main Forecast
+        # ─────────────────────────────────────────────────────────────────────────
+        fig.add_trace(go.Scatter(
+            x=future_dates,
+            y=pf['median'],
+            mode='lines',
+            name='Ensemble Forecast',
+            line=dict(color='#10b981', width=2.5),
+            hovertemplate=(
+                '<b>Probabilistic Forecast</b><br>'
+                'Date: %{x|%d-%b-%Y}<br>'
+                'Median: %{y:,.2f}<br>'
+                f"Range: {pf['lower_10'][-1]:,.0f} - {pf['upper_90'][-1]:,.0f}"
+                '<extra></extra>'
             )
-            
-        # COMPONENT MODELS: Hidden by default
-        else:
+        ))
+        
+        # ─────────────────────────────────────────────────────────────────────────
+        # Annotations: Target Price + Regime Badge
+        # ─────────────────────────────────────────────────────────────────────────
+        last_pred_val = pf['median'][-1]
+        last_pred_date = future_dates[-1]
+        
+        # Target annotation
+        fig.add_annotation(
+            x=last_pred_date, y=last_pred_val,
+            text=f"Target: {last_pred_val:,.0f}",
+            showarrow=True,
+            arrowhead=2, arrowsize=1, arrowwidth=2,
+            arrowcolor='#10b981',
+            ax=0, ay=-40,
+            bgcolor="#10b981",
+            bordercolor="#10b981",
+            font=dict(color="white", size=12, family="Inter")
+        )
+        
+        # Percentile annotations removed for cleaner look
+        
+        # Connect Last History to First Forecast
+        fig.add_trace(go.Scatter(
+            x=[hist_x[-1], future_dates[0]],
+            y=[hist_y.iloc[-1], pf['median'][0]],
+            mode='lines',
+            line=dict(color='#10b981', width=2.5, dash='dot'),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+    else:
+        # Fallback: Original single-line forecasts from individual models
+        for model_name, preds in future_results.items():
             fig.add_trace(go.Scatter(
                 x=future_dates,
                 y=preds,
                 mode='lines',
                 name=model_name,
                 line=dict(color=chart_colors.get(model_name, '#ccc'), width=1.5, dash='dot'),
+                visible='legendonly' if model_name != 'Ensemble' else True
+            ))
+    
+    # Add component model lines (always hidden by default, can toggle in legend)
+    for model_name, preds in future_results.items():
+        if model_name not in ['Ensemble']:
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=preds,
+                mode='lines',
+                name=f'{model_name} (Component)',
+                line=dict(color=chart_colors.get(model_name, '#ccc'), width=1.5, dash='dot'),
                 visible='legendonly'
             ))
-            
-    # Connect Last History to First Forecast (Visual Continuity)
-    if 'Ensemble' in future_results:
-        fig.add_trace(go.Scatter(
-            x=[hist_x[-1], future_dates[0]],
-            y=[hist_y.iloc[-1], future_results['Ensemble'][0]],
-            mode='lines',
-            line=dict(color='#10b981', width=2.5, dash='dot'),
-            showlegend=False,
-            hoverinfo='skip'
-        ))
 
     # Add Vertical Line separator between History and Forecast
     # Use add_shape instead of add_vline to avoid Plotly annotation bug
@@ -712,14 +755,7 @@ if 'history_preds' in st.session_state and st.session_state.history_preds:
     # Calculate midpoint date (use index 7 of future_dates for center)
     mid_forecast_date = future_dates[len(future_dates)//2]
     
-    fig.add_annotation(
-        x=mid_forecast_date, y=0.95, yref="paper",  # Inside zone, at top
-        text="FORECAST ZONE",
-        showarrow=False,
-        font=dict(size=12, color="#10b981"),
-        bgcolor="rgba(255,255,255,0.8)",
-        borderpad=4
-    )
+    # FORECAST ZONE label removed - the green shaded area is self-explanatory
     
     # Forecast Zone Background (Subtle highlight)
     fig.add_vrect(

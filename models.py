@@ -24,6 +24,425 @@ np.random.seed(42)
 tf.random.set_seed(42)
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHẦN 0: GARCH VOLATILITY MODEL (Mô hình hóa Biến động)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fit_garch_model(df, return_col='Close'):
+    """
+    ───────────────────────────────────────────────────────────────────────────────
+    FIT GARCH(1,1) MODEL - Mô hình hóa Volatility Clustering
+    ───────────────────────────────────────────────────────────────────────────────
+    
+    GARCH (Generalized Autoregressive Conditional Heteroskedasticity) là mô hình
+    tiêu chuẩn trong tài chính để dự báo độ biến động (volatility).
+    
+    Đặc điểm quan trọng:
+    - Volatility Clustering: Biến động mạnh thường đi theo biến động mạnh
+    - Mean Reversion: Volatility có xu hướng quay về mức trung bình dài hạn
+    
+    Tham số:
+        df: DataFrame chứa dữ liệu giá
+        return_col: Tên cột giá để tính returns
+    
+    Trả về:
+        garch_result: Kết quả đã fit của GARCH model
+        returns: Chuỗi log returns đã tính
+    ───────────────────────────────────────────────────────────────────────────────
+    """
+    try:
+        from arch import arch_model
+        
+        # Tính Log Returns
+        prices = df[return_col].values
+        returns = np.diff(np.log(prices)) * 100  # Scale to percentage
+        
+        # Loại bỏ NaN và Inf
+        returns = returns[np.isfinite(returns)]
+        
+        # Fit GARCH(1,1) model
+        model = arch_model(returns, vol='Garch', p=1, q=1, mean='AR', lags=1, rescale=False)
+        result = model.fit(disp='off', show_warning=False)
+        
+        return result, returns
+        
+    except Exception as e:
+        print(f"GARCH fitting failed: {e}. Using fallback volatility.")
+        return None, None
+
+
+def forecast_volatility_garch(garch_result, n_days=14):
+    """
+    ───────────────────────────────────────────────────────────────────────────────
+    DỰ BÁO VOLATILITY TƯƠNG LAI TỪ GARCH MODEL
+    ───────────────────────────────────────────────────────────────────────────────
+    
+    Trả về: Array of daily volatility forecasts (as decimal, not percentage)
+    ───────────────────────────────────────────────────────────────────────────────
+    """
+    try:
+        forecast = garch_result.forecast(horizon=n_days)
+        # Variance forecast → Volatility (standard deviation)
+        # Chia 100 để chuyển từ percentage về decimal
+        vol_forecast = np.sqrt(forecast.variance.values[-1, :]) / 100
+        return vol_forecast
+    except:
+        # Fallback: constant volatility based on historical
+        return np.full(n_days, 0.015)  # 1.5% daily volatility
+
+
+def detect_market_regime(df, lookback=20):
+    """
+    ───────────────────────────────────────────────────────────────────────────────
+    NHẬN DIỆN CHẾ ĐỘ THỊ TRƯỜNG (Market Regime Detection)
+    ───────────────────────────────────────────────────────────────────────────────
+    
+    Phân loại thị trường thành 3 chế độ:
+    - TRENDING_UP:   Đang trong xu hướng tăng mạnh
+    - TRENDING_DOWN: Đang trong xu hướng giảm mạnh
+    - SIDEWAYS:      Đi ngang, không có xu hướng rõ
+
+    Trả về:
+        regime: str ('trending_up', 'trending_down', 'sideways')
+        strength: float (0-1, độ mạnh của regime)
+        momentum: float (hướng và cường độ momentum)
+    ───────────────────────────────────────────────────────────────────────────────
+    """
+    prices = df['Close'].tail(lookback).values
+    
+    # Tính momentum (linear regression slope)
+    x = np.arange(len(prices))
+    slope, intercept = np.polyfit(x, prices, 1)
+    
+    # Normalize slope by price level
+    momentum = slope / prices.mean()
+    
+    # Tính R² để đo độ mạnh của trend
+    y_pred = slope * x + intercept
+    ss_res = np.sum((prices - y_pred) ** 2)
+    ss_tot = np.sum((prices - prices.mean()) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+    
+    # Classify regime
+    if r_squared > 0.6:  # Strong trend
+        if momentum > 0.001:
+            regime = 'trending_up'
+        else:
+            regime = 'trending_down'
+        strength = r_squared
+    else:
+        regime = 'sideways'
+        strength = 1 - r_squared
+    
+    return regime, strength, momentum
+
+
+def calculate_technical_score(df):
+    """
+    ═══════════════════════════════════════════════════════════════════════════════
+    TECHNICAL SCORE SYSTEM - Tính điểm hướng dựa trên chỉ báo kỹ thuật
+    ═══════════════════════════════════════════════════════════════════════════════
+    
+    Kết hợp 4 chỉ báo kỹ thuật để xác định hướng forecast:
+    - RSI: Overbought/Oversold
+    - MACD: Crossover và Momentum
+    - Bollinger Bands: Position relative to bands
+    - MA Crossover: Short-term vs Medium-term trend
+    
+    Trả về:
+        score: float (-8 to +8)
+        direction: str ('bullish', 'bearish', 'neutral')
+        daily_drift: float (expected daily % change)
+        details: dict (breakdown of each indicator's contribution)
+    ═══════════════════════════════════════════════════════════════════════════════
+    """
+    score = 0
+    details = {}
+    
+    # Get latest values
+    close = df['Close'].iloc[-1]
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 1. RSI Analysis (-2 to +2)
+    # ─────────────────────────────────────────────────────────────────────────────
+    rsi = df['RSI'].iloc[-1] if 'RSI' in df.columns else 50
+    
+    if rsi < 30:
+        rsi_score = 2  # Strong oversold → expect bounce UP
+        rsi_signal = "Oversold (Strong Buy)"
+    elif rsi < 40:
+        rsi_score = 1  # Mild oversold
+        rsi_signal = "Mildly Oversold"
+    elif rsi > 70:
+        rsi_score = -2  # Strong overbought → expect pullback DOWN
+        rsi_signal = "Overbought (Strong Sell)"
+    elif rsi > 60:
+        rsi_score = -1  # Mild overbought
+        rsi_signal = "Mildly Overbought"
+    else:
+        rsi_score = 0
+        rsi_signal = "Neutral"
+    
+    score += rsi_score
+    details['RSI'] = {'value': rsi, 'score': rsi_score, 'signal': rsi_signal}
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 2. MACD Analysis (-2 to +2)
+    # ─────────────────────────────────────────────────────────────────────────────
+    if 'MACD' in df.columns and 'MACD_Signal' in df.columns:
+        macd = df['MACD'].iloc[-1]
+        macd_signal = df['MACD_Signal'].iloc[-1]
+        macd_prev = df['MACD'].iloc[-2] if len(df) > 1 else macd
+        
+        # MACD histogram
+        histogram = macd - macd_signal
+        histogram_prev = macd_prev - df['MACD_Signal'].iloc[-2] if len(df) > 1 else histogram
+        
+        if macd > macd_signal:
+            if histogram > histogram_prev:  # Increasing bullish momentum
+                macd_score = 2
+                macd_sig = "Bullish Crossover + Momentum"
+            else:
+                macd_score = 1
+                macd_sig = "Bullish"
+        elif macd < macd_signal:
+            if histogram < histogram_prev:  # Increasing bearish momentum
+                macd_score = -2
+                macd_sig = "Bearish Crossover + Momentum"
+            else:
+                macd_score = -1
+                macd_sig = "Bearish"
+        else:
+            macd_score = 0
+            macd_sig = "Neutral"
+    else:
+        macd_score = 0
+        macd_sig = "N/A"
+    
+    score += macd_score
+    details['MACD'] = {'score': macd_score, 'signal': macd_sig}
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 3. Bollinger Bands Analysis (-1 to +1)
+    # ─────────────────────────────────────────────────────────────────────────────
+    if 'BB_Upper' in df.columns and 'BB_Lower' in df.columns:
+        bb_upper = df['BB_Upper'].iloc[-1]
+        bb_lower = df['BB_Lower'].iloc[-1]
+        bb_middle = df['BB_Middle'].iloc[-1] if 'BB_Middle' in df.columns else (bb_upper + bb_lower) / 2
+        
+        if close < bb_lower:
+            bb_score = 1  # Below lower band → oversold
+            bb_sig = "Below Lower Band (Oversold)"
+        elif close > bb_upper:
+            bb_score = -1  # Above upper band → overbought
+            bb_sig = "Above Upper Band (Overbought)"
+        elif close > bb_middle:
+            bb_score = 0.5  # Upper half
+            bb_sig = "Upper Half"
+        else:
+            bb_score = -0.5  # Lower half
+            bb_sig = "Lower Half"
+    else:
+        bb_score = 0
+        bb_sig = "N/A"
+    
+    score += bb_score
+    details['Bollinger'] = {'score': bb_score, 'signal': bb_sig}
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 4. Moving Average Crossover (-2 to +2)
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Calculate SMAs if not present
+    if len(df) >= 21:
+        sma_7 = df['Close'].tail(7).mean()
+        sma_21 = df['Close'].tail(21).mean()
+        sma_7_prev = df['Close'].iloc[-8:-1].mean() if len(df) > 8 else sma_7
+        
+        if sma_7 > sma_21:
+            if sma_7 > sma_7_prev:  # Rising trend
+                ma_score = 2
+                ma_sig = "Uptrend + Accelerating"
+            else:
+                ma_score = 1
+                ma_sig = "Uptrend"
+        elif sma_7 < sma_21:
+            if sma_7 < sma_7_prev:  # Falling trend
+                ma_score = -2
+                ma_sig = "Downtrend + Accelerating"
+            else:
+                ma_score = -1
+                ma_sig = "Downtrend"
+        else:
+            ma_score = 0
+            ma_sig = "Neutral"
+    else:
+        ma_score = 0
+        ma_sig = "Insufficient Data"
+    
+    score += ma_score
+    details['MA_Crossover'] = {'score': ma_score, 'signal': ma_sig}
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Calculate Direction and Daily Drift
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Score range: -8 to +8
+    if score >= 4:
+        direction = 'strong_bullish'
+        daily_drift = 0.003  # +0.3% per day
+    elif score >= 2:
+        direction = 'bullish'
+        daily_drift = 0.0015  # +0.15% per day
+    elif score <= -4:
+        direction = 'strong_bearish'
+        daily_drift = -0.003  # -0.3% per day
+    elif score <= -2:
+        direction = 'bearish'
+        daily_drift = -0.0015  # -0.15% per day
+    else:
+        direction = 'neutral'
+        daily_drift = 0.0
+    
+    return score, direction, daily_drift, details
+
+
+def forecast_probabilistic_ensemble(
+    base_forecasts,     # Dict: {'ARIMAX': array, 'XGBoost': array, ...}
+    garch_vol,          # Array: volatility forecast từ GARCH
+    last_price,         # Float: giá đóng cửa cuối cùng
+    regime_info,        # Tuple: (regime, strength, momentum)
+    technical_drift=0.0, # Float: daily drift từ technical score
+    n_simulations=500,  # Số Monte Carlo paths
+    n_days=14
+):
+    """
+    ═══════════════════════════════════════════════════════════════════════════════
+    TẠO DỰ BÁO XÁC SUẤT VỚI FAN CHART (Probabilistic Ensemble Forecast)
+    ═══════════════════════════════════════════════════════════════════════════════
+    
+    Kết hợp:
+    1. Base forecasts từ các models (ARIMAX, XGBoost, LSTM)
+    2. GARCH volatility để scale uncertainty
+    3. Regime information để điều chỉnh drift
+    4. Monte Carlo simulation để tạo distribution
+    
+    Trả về:
+        dict: {
+            'median': array,      # 50th percentile (đường chính)
+            'lower_10': array,    # 10th percentile (pessimistic)
+            'upper_90': array,    # 90th percentile (optimistic)
+            'lower_25': array,    # 25th percentile
+            'upper_75': array,    # 75th percentile
+            'paths': array        # Tất cả simulated paths (for debugging)
+        }
+    ═══════════════════════════════════════════════════════════════════════════════
+    """
+    regime, strength, momentum = regime_info
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # BƯỚC 1: Tính Weighted Average của base forecasts (làm drift/center)
+    # ─────────────────────────────────────────────────────────────────────────────
+    if base_forecasts:
+        # Stack all forecasts and take mean
+        all_preds = np.array(list(base_forecasts.values()))
+        # Ensure all have same length
+        min_len = min(len(p) for p in base_forecasts.values())
+        all_preds = np.array([p[:min_len] for p in base_forecasts.values()])
+        base_path = np.mean(all_preds, axis=0)
+    else:
+        # Fallback: flat forecast at last price
+        base_path = np.full(n_days, last_price)
+    
+    # Pad if needed
+    if len(base_path) < n_days:
+        last_val = base_path[-1] if len(base_path) > 0 else last_price
+        base_path = np.pad(base_path, (0, n_days - len(base_path)), constant_values=last_val)
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # BƯỚC 2: Điều chỉnh drift dựa trên Regime
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Trong trending regime, giữ momentum
+    # Trong sideways, mean-revert mạnh hơn
+    
+    drift_adjustment = np.zeros(n_days)
+    cumulative_momentum = 0
+    
+    for t in range(n_days):
+        if regime == 'trending_up':
+            # Momentum decay but still positive
+            decay_factor = np.exp(-0.05 * t)  # Slow decay
+            cumulative_momentum += momentum * last_price * decay_factor
+        elif regime == 'trending_down':
+            decay_factor = np.exp(-0.05 * t)
+            cumulative_momentum += momentum * last_price * decay_factor
+        else:  # sideways
+            # Mean reversion - pull towards recent mean
+            decay_factor = np.exp(-0.1 * t)  # Faster decay to mean
+            cumulative_momentum *= decay_factor
+            
+        drift_adjustment[t] = cumulative_momentum * strength
+    
+    # Apply drift adjustment to base path
+    adjusted_path = base_path + drift_adjustment
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # BƯỚC 3: Monte Carlo Simulation với GARCH volatility + Technical Drift
+    # ─────────────────────────────────────────────────────────────────────────────
+    np.random.seed(42)  # For reproducibility in demo
+    
+    # Ensure garch_vol has correct length
+    if garch_vol is None or len(garch_vol) < n_days:
+        # Fallback volatility: historical std scaled by sqrt(t)
+        base_vol = 0.012  # ~1.2% daily
+        garch_vol = np.array([base_vol * np.sqrt(t+1) for t in range(n_days)])
+    else:
+        garch_vol = garch_vol[:n_days]
+    
+    # Generate paths
+    paths = np.zeros((n_simulations, n_days))
+    
+    for sim in range(n_simulations):
+        path = np.zeros(n_days)
+        price = last_price
+        
+        for t in range(n_days):
+            # Random shock scaled by GARCH volatility
+            shock = np.random.normal(0, garch_vol[t])
+            
+            # TECHNICAL DRIFT: Apply direction from technical indicators
+            # Optimized for 7-day forecast - slower decay to maintain signal
+            decay_factor = np.exp(-0.01 * t)  # Very slow decay for 7-day
+            daily_return = technical_drift * decay_factor
+            
+            # Add drift to adjusted path target
+            target_return = (adjusted_path[t] - price) / price + daily_return
+            
+            # Blend target return with random shock
+            # Optimized for 7-day: higher model weight throughout
+            model_weight = np.exp(-0.05 * t)  # Slower decay for 7-day accuracy
+            actual_return = model_weight * target_return + (1 - model_weight) * (shock + daily_return)
+            
+            # Apply return
+            price = price * (1 + actual_return)
+            path[t] = price
+            
+        paths[sim, :] = path
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # BƯỚC 4: Tính Percentiles từ distribution
+    # ─────────────────────────────────────────────────────────────────────────────
+    result = {
+        'median': np.percentile(paths, 50, axis=0),
+        'lower_10': np.percentile(paths, 10, axis=0),
+        'upper_90': np.percentile(paths, 90, axis=0),
+        'lower_25': np.percentile(paths, 25, axis=0),
+        'upper_75': np.percentile(paths, 75, axis=0),
+        'mean': np.mean(paths, axis=0),
+        'regime': regime,
+        'regime_strength': strength
+    }
+    
+    return result
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHẦN 1: FEATURE ENGINEERING (Làm giàu đặc trưng)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -300,155 +719,195 @@ def train_xgboost(train_data, test_data, n_days=14, use_tuning=True):
 def train_lstm(df, train_size, n_days=14):
     """
     ═══════════════════════════════════════════════════════════════════════════════
-    HUẤN LUYỆN MÔ HÌNH LSTM VỚI ATTENTION LAYER
+    HUẤN LUYỆN MÔ HÌNH LSTM VỚI PROPER SEQUENCE LEARNING
     ───────────────────────────────────────────────────────────────────────────────
-    Mục tiêu: Dự báo Log Returns của chỉ số VN30.
+    [REFACTORED] Sử dụng lookback window thực sự để LSTM học được patterns
+    
     Đầu vào:  df - DataFrame chứa dữ liệu lịch sử
               train_size - Số lượng mẫu dùng để huấn luyện
               n_days - Số ngày dự báo (mặc định 14)
-    Đầu ra:   pred_prices - Giá dự báo trên tập Test
-              lstm_objects - Dictionary chứa model, scaler, features để dùng cho dự báo tương lai
     
-    LƯU Ý QUAN TRỌNG VỀ DATA LEAKAGE:
-    - MinMaxScaler chỉ được FIT trên tập TRAINING
-    - Tập TEST và FUTURE chỉ được TRANSFORM bằng scaler đã fit
-    - Điều này đảm bảo mô hình không "nhìn trộm" dữ liệu tương lai
+    KIẾN TRÚC MỚI:
+    - Lookback: 10 ngày (chuỗi thời gian thực sự)
+    - Features: Log_Ret, RSI_norm, ATR_norm, Volume_norm (4 features)
+    - Shape: (samples, 10, 4) - đúng format cho sequence learning
+    - Output: Dự báo Log Return của ngày tiếp theo
     ═══════════════════════════════════════════════════════════════════════════════
     """
-    from tensorflow.keras.layers import Attention, MultiHeadAttention, LayerNormalization
+    from tensorflow.keras.layers import LayerNormalization
+    from tensorflow.keras import Input, Model
+    from tensorflow.keras.layers import Flatten
+    from tensorflow.keras.optimizers import Adam
     
     np.random.seed(42)
     tf.random.set_seed(42)
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # BƯỚC 1: TÍNH LOG RETURNS
+    # BƯỚC 1: CHUẨN BỊ FEATURES ĐA CHIỀU
     # ─────────────────────────────────────────────────────────────────────────────
-    # Công thức: r_t = log(P_t / P_{t-1})
-    # Log Returns có tính ổn định hơn Returns thông thường (stationary)
+    LOOKBACK = 10  # Số ngày nhìn lại (sequence length)
+    
     df_lstm = df.copy()
+    
+    # Feature 1: Log Returns (stationary)
     df_lstm['Log_Ret'] = np.log(df_lstm['Close'] / df_lstm['Close'].shift(1))
+    
+    # Feature 2: RSI normalized (0-1) 
+    if 'RSI' in df_lstm.columns:
+        df_lstm['RSI_norm'] = df_lstm['RSI'] / 100.0
+    else:
+        df_lstm['RSI_norm'] = 0.5  # Neutral fallback
+    
+    # Feature 3: ATR normalized (% of price)
+    if 'ATR' in df_lstm.columns:
+        df_lstm['ATR_norm'] = df_lstm['ATR'] / df_lstm['Close']
+    else:
+        df_lstm['ATR_norm'] = 0.01  # 1% fallback
+    
+    # Feature 4: Volume change (normalized)
+    if 'Volume' in df_lstm.columns:
+        df_lstm['Vol_Change'] = df_lstm['Volume'].pct_change()
+        df_lstm['Vol_Change'] = df_lstm['Vol_Change'].clip(-1, 1)  # Clip outliers
+    else:
+        df_lstm['Vol_Change'] = 0.0
+    
+    # Fill NaN
     df_lstm.fillna(0, inplace=True)
     
-    # ─────────────────────────────────────────────────────────────────────────────
-    # BƯỚC 2: TẠO LAG FEATURES (Biến trễ)
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Lag_Ret_1: Log Return của ngày hôm qua
-    # Lag_Ret_2: Log Return của 2 ngày trước
-    # Lag_Ret_3: Log Return của 3 ngày trước
-    for i in range(1, 4):
-        df_lstm[f'Lag_Ret_{i}'] = df_lstm['Log_Ret'].shift(i)
-    df_lstm.dropna(inplace=True)
-    
-    features = [c for c in df_lstm.columns if c.startswith('Lag_')]
-    X_vals = df_lstm[features].values
-    y_vals = df_lstm['Log_Ret'].values
+    # Features list
+    feature_cols = ['Log_Ret', 'RSI_norm', 'ATR_norm', 'Vol_Change']
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # BƯỚC 3: CHIA TẬP TRAIN/TEST (Trước khi Scale)
+    # BƯỚC 2: TẠO SEQUENCES VỚI SLIDING WINDOW
     # ─────────────────────────────────────────────────────────────────────────────
-    split_idx = len(df_lstm) - (len(df) - train_size)
+    # Mỗi sample X gồm LOOKBACK ngày, target y là Log_Ret của ngày tiếp theo
     
-    X_train_raw = X_vals[:split_idx]
-    y_train = y_vals[:split_idx]
-    X_test_raw = X_vals[split_idx:]
+    feature_data = df_lstm[feature_cols].values
+    target_data = df_lstm['Log_Ret'].values
+    
+    X_sequences = []
+    y_targets = []
+    
+    for i in range(LOOKBACK, len(df_lstm)):
+        # X: 10 ngày trước (i-10 đến i-1)
+        X_sequences.append(feature_data[i-LOOKBACK:i])
+        # y: Log return của ngày i
+        y_targets.append(target_data[i])
+    
+    X_all = np.array(X_sequences)  # Shape: (samples, 10, 4)
+    y_all = np.array(y_targets)    # Shape: (samples,)
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # BƯỚC 4: CHUẨN HÓA DỮ LIỆU (FIT CHỈ TRÊN TRAINING - CHỐNG DATA LEAKAGE)
+    # BƯỚC 3: CHIA TẬP TRAIN/TEST (Điều chỉnh theo lookback)
     # ─────────────────────────────────────────────────────────────────────────────
-    # ⚠️ QUAN TRỌNG: Scaler chỉ được fit trên tập TRAINING
-    # Sau đó dùng scaler này để transform tập TEST và FUTURE
+    # Số samples sau khi tạo sequences
+    adjusted_train_size = train_size - LOOKBACK
+    if adjusted_train_size < 50:
+        adjusted_train_size = len(X_all) - (len(df) - train_size)
+    
+    X_train_raw = X_all[:adjusted_train_size]
+    y_train = y_all[:adjusted_train_size]
+    X_test_raw = X_all[adjusted_train_size:]
+    y_test = y_all[adjusted_train_size:]
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # BƯỚC 4: CHUẨN HÓA DỮ LIỆU (FIT CHỈ TRÊN TRAINING)
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Reshape để fit scaler: (samples * timesteps, features)
+    n_train, n_timesteps, n_features = X_train_raw.shape
+    
     scaler_X = MinMaxScaler(feature_range=(-1, 1))
-    X_train_scaled = scaler_X.fit_transform(X_train_raw)  # FIT + TRANSFORM trên Train
-    X_test_scaled = scaler_X.transform(X_test_raw)        # CHỈ TRANSFORM trên Test
     
-    # Reshape cho LSTM: [samples, timesteps, features]
-    X_train = X_train_scaled.reshape(-1, 1, len(features))
-    X_test = X_test_scaled.reshape(-1, 1, len(features))
+    # Flatten, fit, reshape
+    X_train_flat = X_train_raw.reshape(-1, n_features)
+    scaler_X.fit(X_train_flat)
+    
+    X_train_scaled = scaler_X.transform(X_train_flat).reshape(n_train, n_timesteps, n_features)
+    
+    if len(X_test_raw) > 0:
+        X_test_flat = X_test_raw.reshape(-1, n_features)
+        X_test_scaled = scaler_X.transform(X_test_flat).reshape(len(X_test_raw), n_timesteps, n_features)
+    else:
+        X_test_scaled = np.array([]).reshape(0, n_timesteps, n_features)
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # BƯỚC 5: XÂY DỰNG MÔ HÌNH LSTM VỚI ATTENTION LAYER
+    # BƯỚC 5: XÂY DỰNG MÔ HÌNH LSTM VỚI PROPER SEQUENCE ARCHITECTURE
     # ─────────────────────────────────────────────────────────────────────────────
-    # Attention Layer giúp mô hình "tập trung" vào các thời điểm quan trọng
-    # trong chuỗi thời gian thay vì xử lý tất cả thời điểm như nhau
-    from tensorflow.keras import Input, Model
+    inputs = Input(shape=(LOOKBACK, n_features))
     
-    inputs = Input(shape=(1, len(features)))
-    
-    # Bidirectional LSTM: Đọc chuỗi từ cả 2 hướng (quá khứ→hiện tại và hiện tại→quá khứ)
-    # [UPGRADED] Tăng units để tăng capacity
+    # Layer 1: Bidirectional LSTM - học patterns từ cả 2 hướng
     lstm_out = Bidirectional(LSTM(64, return_sequences=True))(inputs)
-    lstm_out = Dropout(0.3)(lstm_out)  # [NEW] Regularization giữa các layers
+    lstm_out = Dropout(0.2)(lstm_out)
     
-    # Second LSTM layer for deeper learning
-    lstm_out2 = Bidirectional(LSTM(32, return_sequences=True))(lstm_out)
+    # Layer 2: LSTM để aggregate thông tin
+    lstm_out2 = LSTM(32, return_sequences=False)(lstm_out)
+    lstm_out2 = Dropout(0.2)(lstm_out2)
     
-    # Self-Attention: Tính trọng số attention cho mỗi timestep
-    # Sử dụng LayerNormalization để ổn định training
-    normalized = LayerNormalization()(lstm_out2)
+    # Dense layers
+    dense1 = Dense(16, activation='relu')(lstm_out2)
+    outputs = Dense(1, activation='tanh')(dense1)  # tanh vì log return thường trong (-1, 1)
     
-    # Flatten và Dense layers
-    from tensorflow.keras.layers import Flatten
-    flattened = Flatten()(normalized)
-    dense1 = Dense(32, activation='relu')(flattened)  # [UPGRADED] Tăng neurons
-    dropout1 = Dropout(0.3)(dense1)  # [UPGRADED] Tăng dropout
-    outputs = Dense(1)(dropout1)
+    # Scale output để phù hợp với log return thực tế (thường < 0.1)
+    from tensorflow.keras.layers import Lambda
+    outputs = Lambda(lambda x: x * 0.1)(outputs)
     
     model = Model(inputs, outputs)
     
-    # [UPGRADED] Use Adam with configurable learning rate
-    from tensorflow.keras.optimizers import Adam
     optimizer = Adam(learning_rate=0.001)
-    model.compile(optimizer=optimizer, loss='mse')
+    model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # [UPGRADED] CALLBACKS: EarlyStopping + ReduceLROnPlateau
+    # BƯỚC 6: TRAINING VỚI CALLBACKS
     # ─────────────────────────────────────────────────────────────────────────────
     callbacks = [
         EarlyStopping(
             monitor='val_loss',
-            patience=10,
+            patience=15,
             restore_best_weights=True,
             verbose=0
         ),
         ReduceLROnPlateau(
             monitor='val_loss',
             factor=0.5,
-            patience=5,
+            patience=7,
             min_lr=1e-6,
             verbose=0
         )
     ]
     
-    # Huấn luyện với validation split và callbacks
     model.fit(
-        X_train, y_train, 
-        epochs=100,  # [UPGRADED] Tăng epochs, EarlyStopping sẽ dừng sớm nếu overfitting
-        batch_size=16, 
-        validation_split=0.2,  # [NEW] 20% của tập train để validate
+        X_train_scaled, y_train,
+        epochs=150,
+        batch_size=32,
+        validation_split=0.15,
         callbacks=callbacks,
         verbose=0
     )
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # BƯỚC 6: DỰ BÁO VÀ CHUYỂN ĐỔI NGƯỢC (INVERSE TRANSFORM)
+    # BƯỚC 7: DỰ BÁO TRÊN TẬP TEST
     # ─────────────────────────────────────────────────────────────────────────────
-    # Dự báo Log Returns trên tập Test
-    pred_log_ret = model.predict(X_test, verbose=0).flatten()
-    
-    # Chuyển đổi Log Returns → Giá gốc
-    # Công thức: P_t = P_{t-1} * exp(r_t)
-    prev_close = df.iloc[train_size-1:-1]['Close'].values
-    min_len = min(len(prev_close), len(pred_log_ret))
-    pred_prices = prev_close[:min_len] * np.exp(pred_log_ret[:min_len])
+    if len(X_test_scaled) > 0:
+        pred_log_ret = model.predict(X_test_scaled, verbose=0).flatten()
+        
+        # Chuyển Log Returns → Giá
+        # Lấy giá đóng cửa trước mỗi ngày test
+        test_start_idx = train_size
+        prev_close = df.iloc[test_start_idx-1:-1]['Close'].values
+        min_len = min(len(prev_close), len(pred_log_ret))
+        pred_prices = prev_close[:min_len] * np.exp(pred_log_ret[:min_len])
+    else:
+        pred_prices = np.array([df['Close'].iloc[-1]])
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # BƯỚC 7: ĐÓNG GÓI ĐỐI TƯỢNG ĐỂ DỰ BÁO TƯƠNG LAI
+    # BƯỚC 8: ĐÓNG GÓI ĐỐI TƯỢNG
     # ─────────────────────────────────────────────────────────────────────────────
     lstm_objects = {
         'model': model,
-        'scaler_X': scaler_X,  # Scaler đã fit trên Training
-        'features': features,
-        'train_size': train_size
+        'scaler_X': scaler_X,
+        'feature_cols': feature_cols,
+        'lookback': LOOKBACK,
+        'n_features': n_features
     }
     
     return pred_prices, lstm_objects
@@ -623,40 +1082,105 @@ def forecast_future_xgboost(model_objs, df, n_days=14):
 
 def forecast_future_lstm(lstm_objects, df, n_days=14):
     """
-    Direct Forecast using LSTM (Log Returns).
+    ═══════════════════════════════════════════════════════════════════════════════
+    DỰ BÁO TƯƠNG LAI BẰNG LSTM VỚI PROPER SEQUENCE LEARNING
+    ───────────────────────────────────────────────────────────────────────────────
+    [REFACTORED] Sử dụng lookback window thực sự để dự báo iterative
+    
+    Logic:
+    1. Lấy 10 ngày cuối cùng làm sequence đầu tiên
+    2. Dự báo Log Return ngày T+1
+    3. Cập nhật sequence: bỏ ngày đầu, thêm ngày mới vào cuối
+    4. Lặp lại cho đến khi đủ n_days
+    ═══════════════════════════════════════════════════════════════════════════════
     """
     model = lstm_objects['model']
     scaler_X = lstm_objects['scaler_X']
-    features = lstm_objects['features']
+    feature_cols = lstm_objects['feature_cols']
+    LOOKBACK = lstm_objects['lookback']
+    n_features = lstm_objects['n_features']
     
-    # Prepare Log Returns
+    # ─────────────────────────────────────────────────────────────────────────────
+    # BƯỚC 1: CHUẨN BỊ DỮ LIỆU FEATURES
+    # ─────────────────────────────────────────────────────────────────────────────
     df_lstm = df.copy()
+    
+    # Tính các features giống như training
     df_lstm['Log_Ret'] = np.log(df_lstm['Close'] / df_lstm['Close'].shift(1))
+    
+    if 'RSI' in df_lstm.columns:
+        df_lstm['RSI_norm'] = df_lstm['RSI'] / 100.0
+    else:
+        df_lstm['RSI_norm'] = 0.5
+    
+    if 'ATR' in df_lstm.columns:
+        df_lstm['ATR_norm'] = df_lstm['ATR'] / df_lstm['Close']
+    else:
+        df_lstm['ATR_norm'] = 0.01
+    
+    if 'Volume' in df_lstm.columns:
+        df_lstm['Vol_Change'] = df_lstm['Volume'].pct_change().clip(-1, 1)
+    else:
+        df_lstm['Vol_Change'] = 0.0
+    
     df_lstm.fillna(0, inplace=True)
     
-    for i in range(1, 4):
-        df_lstm[f'Lag_Ret_{i}'] = df_lstm['Log_Ret'].shift(i)
+    # ─────────────────────────────────────────────────────────────────────────────
+    # BƯỚC 2: LẤY SEQUENCE CUỐI CÙNG (10 ngày gần nhất)
+    # ─────────────────────────────────────────────────────────────────────────────
+    feature_data = df_lstm[feature_cols].values
+    current_sequence = feature_data[-LOOKBACK:].copy()  # Shape: (10, 4)
     
-    # Iterative forecast
+    # ─────────────────────────────────────────────────────────────────────────────
+    # BƯỚC 3: DỰ BÁO ITERATIVE
+    # ─────────────────────────────────────────────────────────────────────────────
     predictions = []
     last_close = df['Close'].iloc[-1]
-    last_lags = [df_lstm['Log_Ret'].iloc[-i] for i in range(1, 4)]
+    
+    # Lấy giá trị cuối của các features không đổi (RSI, ATR sẽ mean-revert dần)
+    last_rsi = df_lstm['RSI_norm'].iloc[-1]
+    last_atr = df_lstm['ATR_norm'].iloc[-1]
+    mean_rsi = df_lstm['RSI_norm'].mean()
+    mean_atr = df_lstm['ATR_norm'].mean()
     
     for day in range(n_days):
-        # Build feature vector
-        X_vals = np.array(last_lags + [0] * (len(features) - 3)).reshape(1, -1)
-        X_scaled = scaler_X.transform(X_vals).reshape(1, 1, len(features))
+        # Scale sequence
+        seq_flat = current_sequence.reshape(-1, n_features)
+        seq_scaled = scaler_X.transform(seq_flat).reshape(1, LOOKBACK, n_features)
         
         # Predict log return
-        pred_log_ret = model.predict(X_scaled, verbose=0)[0, 0]
+        pred_log_ret = model.predict(seq_scaled, verbose=0)[0, 0]
+        
+        # Clipping để tránh giá trị cực đoan (±7% là limit hợp lý cho VN30)
+        pred_log_ret = np.clip(pred_log_ret, -0.07, 0.07)
         
         # Convert to price
         new_close = last_close * np.exp(pred_log_ret)
         predictions.append(new_close)
         
-        # Update for next iteration
-        last_lags = [pred_log_ret] + last_lags[:2]
+        # ─────────────────────────────────────────────────────────────────────────
+        # BƯỚC 4: CẬP NHẬT SEQUENCE CHO NGÀY TIẾP THEO
+        # ─────────────────────────────────────────────────────────────────────────
+        # Mean reversion cho RSI và ATR
+        decay = 0.1  # Tốc độ mean reversion
+        new_rsi = last_rsi + decay * (mean_rsi - last_rsi)
+        new_atr = last_atr + decay * (mean_atr - last_atr)
+        
+        # Tạo feature vector mới
+        new_features = np.array([
+            pred_log_ret,   # Log return vừa dự báo
+            new_rsi,        # RSI mean-reverted
+            new_atr,        # ATR mean-reverted
+            0.0             # Volume change = 0 (không biết trước)
+        ])
+        
+        # Shift sequence: bỏ ngày đầu, thêm ngày mới vào cuối
+        current_sequence = np.vstack([current_sequence[1:], new_features])
+        
+        # Update states
         last_close = new_close
+        last_rsi = new_rsi
+        last_atr = new_atr
     
     return np.array(predictions)
 
