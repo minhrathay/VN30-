@@ -915,9 +915,15 @@ def train_lstm(df, train_size, n_days=14):
 
 def train_meta_learner(y_true, model_predictions, feature_df=None):
     """
-    Train a Stacking Meta-Learner (XGBoost).
-    [UPDATED] Supports Feature-Augmented Stacking (using original features + predictions).
+    ═══════════════════════════════════════════════════════════════════════════════
+    TRAIN META-LEARNER VỚI PROPER CROSS-VALIDATION
+    ───────────────────────────────────────────────────────────────────────────────
+    [FIXED] Sử dụng TimeSeriesSplit để tính CV Score thật
+    và holdout set để tính MAPE không bị inflate
+    ═══════════════════════════════════════════════════════════════════════════════
     """
+    from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+    
     # Align lengths
     min_len = min(len(y_true), *[len(p) for p in model_predictions.values()])
     y_target = y_true[-min_len:]
@@ -929,29 +935,55 @@ def train_meta_learner(y_true, model_predictions, feature_df=None):
     # [ADVANCED] Feature Augmented Stacking
     if feature_df is not None:
         try:
-            # Align features with target
             X_features = feature_df.iloc[-min_len:].select_dtypes(include=[np.number]).fillna(0).values
             X_meta = np.column_stack([X_preds, X_features])
         except:
-             X_meta = X_preds
+            X_meta = X_preds
     else:
         X_meta = X_preds
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # [FIX] TRAIN/HOLDOUT SPLIT để tính metrics thực
+    # ─────────────────────────────────────────────────────────────────────────────
+    holdout_size = max(int(len(X_meta) * 0.2), 10)  # 20% holdout, minimum 10 samples
+    
+    X_train = X_meta[:-holdout_size]
+    y_train = y_target[:-holdout_size]
+    X_holdout = X_meta[-holdout_size:]
+    y_holdout = y_target[-holdout_size:]
     
     # Train XGBoost Meta-Learner
     meta_model = XGBRegressor(
         n_estimators=100,
         learning_rate=0.05,
         max_depth=3,
-        random_state=42
+        random_state=42,
+        verbosity=0
     )
-    meta_model.fit(X_meta, y_target)
     
-    # Calculate score
+    # ─────────────────────────────────────────────────────────────────────────────
+    # [FIX] PROPER CROSS-VALIDATION trên training set
+    # ─────────────────────────────────────────────────────────────────────────────
+    if len(X_train) > 30:
+        tscv = TimeSeriesSplit(n_splits=3)
+        cv_scores = cross_val_score(meta_model, X_train, y_train, 
+                                     cv=tscv, scoring='neg_mean_absolute_percentage_error')
+        cv_mape = -np.mean(cv_scores) * 100  # Convert to positive percentage
+        cv_score = max(0, 100 - cv_mape)  # Reasonable CV score
+    else:
+        cv_score = 0  # Not enough data for CV
+    
+    # Fit on full training data
+    meta_model.fit(X_train, y_train)
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # [FIX] MAPE trên HOLDOUT set (không phải training data!)
+    # ─────────────────────────────────────────────────────────────────────────────
+    holdout_pred = meta_model.predict(X_holdout)
+    mape = mean_absolute_percentage_error(y_holdout, holdout_pred) * 100
+    
+    # Final prediction for the entire set (for display purposes)
     final_pred = meta_model.predict(X_meta)
-    mape = mean_absolute_percentage_error(y_target, final_pred) * 100
-    
-    # Cross Validation Score (Simple proxy)
-    cv_score = 100 - mape 
     
     return meta_model, keys, final_pred, mape, cv_score
 
