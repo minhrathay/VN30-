@@ -424,9 +424,14 @@ if run_btn:
                 
                 try:
                     importances = meta_model.feature_importances_
-                    total_imp = np.sum(importances)
+                    # [FIX] Chỉ lấy importance của các models (không lấy context features)
+                    # model_keys có 3 phần tử (ARIMAX, LSTM, XGBoost)
+                    # importances có thể có 7+ phần tử (3 models + 4 context features)
+                    n_models = len(model_keys)
+                    model_importances = importances[:n_models]  # Chỉ lấy n_models đầu tiên
+                    total_imp = np.sum(model_importances)
                     if total_imp > 0:
-                        st.session_state.weights = dict(zip(model_keys, importances/total_imp))
+                        st.session_state.weights = dict(zip(model_keys, model_importances/total_imp))
                     else:
                         st.session_state.weights = {k: 1.0/len(model_keys) for k in model_keys}
                 except:
