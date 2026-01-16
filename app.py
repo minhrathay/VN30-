@@ -264,9 +264,14 @@ with st.sidebar:
     # About Section
     st.caption("ABOUT")
     st.markdown("""
-    **VN30 Forecasting System**  
-    Chuyên đề tốt nghiệp - UEF 2025  
-    """)
+    <div style="font-size: 0.85rem; line-height: 1.6; color: #64748b;">
+        <strong style="color: #1e293b;">VN30 Index Forecasting System</strong><br>
+        <em>Hybrid ML Ensemble Model</em><br><br>
+        Graduation Thesis Project<br>
+        University of Economics and Finance<br>
+        Ho Chi Minh City, Vietnam
+    </div>
+    """, unsafe_allow_html=True)
     
     # All models always enabled
     models_selected = ["ARIMAX", "LSTM", "XGBoost", "Ensemble"]
