@@ -31,7 +31,7 @@ from models import (
 warnings.filterwarnings('ignore')
 
 # ==============================================================================
-# [CRITICAL] ENFORCE GLOBAL DETERMINISM
+# Set random seeds for reproducibility
 # ==============================================================================
 # Set random seeds at APPLICATION LEVEL to guarantee reproducible results
 # across all library calls (NumPy, TensorFlow, XGBoost, Scikit-learn)
@@ -377,7 +377,7 @@ if run_btn:
                 aligned_preds = {k: v[:min_len] for k, v in preds.items()}
                 
                 # Train Meta-Learner
-                # [CRITICAL] Use ONLY specific context features that we can project/simulate for future
+                # Use context features that can be projected for future
                 ctx_cols = ['RSI', 'ATR', 'Correlation_VN30_SP500', 'SP500_LogRet']
                 # Ensure cols exist
                 valid_ctx_cols = [c for c in ctx_cols if c in test_data.columns]
@@ -424,7 +424,7 @@ if run_btn:
                 
                 try:
                     importances = meta_model.feature_importances_
-                    # [FIX] Chỉ lấy importance của các models (không lấy context features)
+                    # Only get importance of model predictions, not context features
                     # model_keys có 3 phần tử (ARIMAX, LSTM, XGBoost)
                     # importances có thể có 7+ phần tử (3 models + 4 context features)
                     n_models = len(model_keys)

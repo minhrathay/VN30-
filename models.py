@@ -521,7 +521,7 @@ def add_macro_features(df, sp500_csv=None, usdvnd_csv=None):
             # PHƯƠNG ÁN 2: Dữ liệu giả lập (Simulated)
             # ────────────────────────────────────────────────────────────────────────
             # S&P 500: Giả lập với tương quan 0.6 với VN30
-            np.random.seed(42) # [CRITICAL] Enforce determinism for simulated data
+            np.random.seed(42)  # Ensure determinism for simulated data
             vn30_returns = df['Close'].pct_change().fillna(0)
         noise = np.random.normal(0, 0.005, len(df))
         sp500_returns = 0.6 * vn30_returns + 0.4 * noise
@@ -642,8 +642,8 @@ def train_xgboost(train_data, test_data, n_days=14, use_tuning=True):
     ═══════════════════════════════════════════════════════════════════════════════
     TRAIN XGBOOST WITH HYPERPARAMETER TUNING (RandomizedSearchCV + TimeSeriesSplit)
     ═══════════════════════════════════════════════════════════════════════════════
-    [UPGRADED] Sử dụng RandomizedSearchCV để tìm hyperparameters tối ưu.
-    TimeSeriesSplit đảm bảo cross-validation phù hợp với dữ liệu chuỗi thời gian.
+    Uses RandomizedSearchCV to find optimal hyperparameters.
+    TimeSeriesSplit ensures proper cross-validation for time series data.
     
     Tham số:
         use_tuning: Nếu True, chạy RandomizedSearchCV (chậm hơn nhưng tốt hơn)
@@ -943,7 +943,7 @@ def train_meta_learner(y_true, model_predictions, feature_df=None):
         X_meta = X_preds
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # [FIX] TRAIN/HOLDOUT SPLIT để tính metrics thực
+    # Train/holdout split for proper metrics
     # ─────────────────────────────────────────────────────────────────────────────
     holdout_size = max(int(len(X_meta) * 0.2), 10)  # 20% holdout, minimum 10 samples
     
@@ -962,7 +962,7 @@ def train_meta_learner(y_true, model_predictions, feature_df=None):
     )
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # [FIX] PROPER CROSS-VALIDATION trên training set
+    # Proper cross-validation on training set
     # ─────────────────────────────────────────────────────────────────────────────
     if len(X_train) > 30:
         tscv = TimeSeriesSplit(n_splits=3)
@@ -977,7 +977,7 @@ def train_meta_learner(y_true, model_predictions, feature_df=None):
     meta_model.fit(X_train, y_train)
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # [FIX] MAPE trên HOLDOUT set (không phải training data!)
+    # MAPE on holdout set (not training data)
     # ─────────────────────────────────────────────────────────────────────────────
     holdout_pred = meta_model.predict(X_holdout)
     mape = mean_absolute_percentage_error(y_holdout, holdout_pred) * 100
