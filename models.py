@@ -659,7 +659,7 @@ def add_macro_features(df, sp500_csv=None, usdvnd_csv=None):
             # PHƯƠNG ÁN 2: Dữ liệu giả lập (Simulated)
             # ────────────────────────────────────────────────────────────────────────
             # S&P 500: Giả lập với tương quan 0.6 với VN30
-            np.random.seed(42) # [CRITICAL] Enforce determinism for simulated data
+            np.random.seed(42)  # Enforce determinism for simulated data
             vn30_returns = df['Close'].pct_change().fillna(0)
         noise = np.random.normal(0, 0.005, len(df))
         sp500_returns = 0.6 * vn30_returns + 0.4 * noise
@@ -734,7 +734,7 @@ def train_arimax(train_data, test_data, exog_cols=['Lag_Vol_1', 'RSI', 'ATR'], f
     ═══════════════════════════════════════════════════════════════════════════════
     HUẤN LUYỆN MÔ HÌNH ARIMAX VỚI AUTO ORDER SELECTION
     ───────────────────────────────────────────────────────────────────────────────
-    [UPGRADED] Sử dụng pmdarima.auto_arima để tự động tìm order tối ưu
+    Sử dụng pmdarima.auto_arima để tự động tìm order tối ưu
     Tích hợp stationarity testing để xác định d order
     
     Tham số:
@@ -821,7 +821,7 @@ def train_xgboost(train_data, test_data, n_days=14, use_tuning=True):
     ═══════════════════════════════════════════════════════════════════════════════
     TRAIN XGBOOST WITH OPTUNA HYPERPARAMETER OPTIMIZATION
     ───────────────────────────────────────────────────────────────────────────────
-    [UPGRADED] Sử dụng Optuna thay vì RandomizedSearchCV để tìm hyperparameters tối ưu.
+    Sử dụng Optuna thay vì RandomizedSearchCV để tìm hyperparameters tối ưu.
     Optuna sử dụng Bayesian Optimization - thông minh hơn random search.
     
     Tham số:
@@ -1040,7 +1040,7 @@ def train_lstm(df, train_size, n_days=14):
     ═══════════════════════════════════════════════════════════════════════════════
     HUẤN LUYỆN MÔ HÌNH LSTM VỚI ATTENTION MECHANISM
     ───────────────────────────────────────────────────────────────────────────────
-    [UPGRADED] Thêm Self-Attention Layer để model tự động focus vào important time steps
+    Thêm Self-Attention Layer để model tự động focus vào important time steps
     Tăng Lookback từ 10 lên 20 ngày để bắt được monthly patterns
     
     Đầu vào:  df - DataFrame chứa dữ liệu lịch sử
@@ -1065,7 +1065,7 @@ def train_lstm(df, train_size, n_days=14):
     # ─────────────────────────────────────────────────────────────────────────────
     # BƯỚC 1: CHUẨN BỊ FEATURES ĐA CHIỀU
     # ─────────────────────────────────────────────────────────────────────────────
-    LOOKBACK = 20  # [UPGRADED] Tăng từ 10 lên 20 để bắt monthly cycles
+    LOOKBACK = 20  # Tăng từ 10 lên 20 để bắt monthly cycles
     
     df_lstm = df.copy()
     
@@ -1091,7 +1091,7 @@ def train_lstm(df, train_size, n_days=14):
     else:
         df_lstm['Vol_Change'] = 0.0
     
-    # [NEW] Feature 5: Price momentum (5-day rolling)
+    # Feature 5: Price momentum (5-day rolling)
     df_lstm['Momentum_5'] = df_lstm['Close'].pct_change(periods=5).clip(-0.1, 0.1)
     
     # Fill NaN
@@ -1164,7 +1164,7 @@ def train_lstm(df, train_size, n_days=14):
     lstm_out = LayerNormalization()(lstm_out)
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # [NEW] SELF-ATTENTION LAYER
+    # SELF-ATTENTION LAYER
     # ═══════════════════════════════════════════════════════════════════════════
     # MultiHeadAttention cho phép model học được time steps nào quan trọng nhất
     # Ví dụ: Ngày có tin tức quan trọng sẽ được model focus vào
@@ -1285,7 +1285,7 @@ def train_meta_learner(y_true, model_predictions, feature_df=None):
         X_meta = X_preds
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # [FIX] TRAIN/HOLDOUT SPLIT để tính metrics thực
+    # TRAIN/HOLDOUT SPLIT để tính metrics thực
     # ─────────────────────────────────────────────────────────────────────────────
     holdout_size = max(int(len(X_meta) * 0.2), 10)  # 20% holdout, minimum 10 samples
     
@@ -1304,7 +1304,7 @@ def train_meta_learner(y_true, model_predictions, feature_df=None):
     )
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # [FIX] PROPER CROSS-VALIDATION trên training set
+    # PROPER CROSS-VALIDATION trên training set
     # ─────────────────────────────────────────────────────────────────────────────
     if len(X_train) > 30:
         tscv = TimeSeriesSplit(n_splits=3)
@@ -1319,7 +1319,7 @@ def train_meta_learner(y_true, model_predictions, feature_df=None):
     meta_model.fit(X_train, y_train)
     
     # ─────────────────────────────────────────────────────────────────────────────
-    # [FIX] MAPE trên HOLDOUT set (không phải training data!)
+    # MAPE trên HOLDOUT set (không phải training data!)
     # ─────────────────────────────────────────────────────────────────────────────
     holdout_pred = meta_model.predict(X_holdout)
     mape = mean_absolute_percentage_error(y_holdout, holdout_pred) * 100
@@ -1459,7 +1459,7 @@ def forecast_future_lstm(lstm_objects, df, n_days=14):
     ═══════════════════════════════════════════════════════════════════════════════
     DỰ BÁO TƯƠNG LAI BẰNG LSTM VỚI ATTENTION MECHANISM
     ───────────────────────────────────────────────────────────────────────────────
-    [UPGRADED] Sử dụng 20-day lookback và 5 features bao gồm Momentum
+    Sử dụng 20-day lookback và 5 features bao gồm Momentum
     
     Logic:
     1. Lấy 20 ngày cuối cùng làm sequence đầu tiên
@@ -1497,7 +1497,7 @@ def forecast_future_lstm(lstm_objects, df, n_days=14):
     else:
         df_lstm['Vol_Change'] = 0.0
     
-    # [NEW] Momentum_5 feature
+    # Momentum_5 feature
     df_lstm['Momentum_5'] = df_lstm['Close'].pct_change(periods=5).clip(-0.1, 0.1)
     
     df_lstm.fillna(0, inplace=True)

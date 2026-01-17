@@ -322,7 +322,7 @@ def format_number(num):
 def standardize_column_names(df):
     """
     ───────────────────────────────────────────────────────────────────────────────
-    [QUANT UTILS] CHUẨN HÓA TÊN CỘT (AUTO-MAPPING)
+    CHUẨN HÓA TÊN CỘT (AUTO-MAPPING)
     ───────────────────────────────────────────────────────────────────────────────
     Tự động nhận diện và đổi tên các cột sang chuẩn tiếng Anh:
     - Ngày -> Date
@@ -366,7 +366,7 @@ def load_macro_data(df_vn30, sp500_path='SP500.csv', usdvnd_path='USD_VND.csv'):
     
     Logic:
         1. Đọc file & Chuẩn hóa tên cột.
-        2. [CRITICAL] Shift(1) dữ liệu Macro:
+        2. Shift(1) dữ liệu Macro:
            - Lý do: Thị trường Mỹ đóng cửa vào rạng sáng ngày T (giờ VN).
            - Do đó, giá Close của SP500 phiên T-1 mới là thông tin khả dụng cho phiên giao dịch T của VN30.
            - Việc Shift(1) đảm bảo tính nhân quả (Causality) và tránh Look-ahead Bias.
@@ -409,7 +409,7 @@ def load_macro_data(df_vn30, sp500_path='SP500.csv', usdvnd_path='USD_VND.csv'):
                 if sp500['Close'].dtype == object:
                      sp500['Close'] = sp500['Close'].astype(str).str.replace(',', '').astype(float)
                 
-                # [QUANT LOGIC] Shift 1 day to prevent Look-ahead Bias
+                # Shift 1 day to prevent Look-ahead Bias
                 sp500['Close'] = sp500['Close'].shift(1)
                 sp500 = sp500.rename(columns={'Close': 'SP500'})
             else:
