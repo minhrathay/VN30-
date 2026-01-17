@@ -1,9 +1,6 @@
 """
-═══════════════════════════════════════════════════════════════════════════════
-ANALYSIS MODULE cho VN30 Forecasting System
-───────────────────────────────────────────────────────────────────────────────
-Phase 4: Feature Importance Analysis & Error Analysis
-═══════════════════════════════════════════════════════════════════════════════
+Analysis module for VN30 Forecasting System
+Feature Importance Analysis & Error Analysis
 """
 import pandas as pd
 import numpy as np
@@ -12,9 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 1. FEATURE IMPORTANCE ANALYSIS
-# ═══════════════════════════════════════════════════════════════════════════════
+# --- Feature Importance Analysis ---
 
 def analyze_feature_importance(model, feature_names, top_k=15):
     """
@@ -127,15 +122,14 @@ def plot_feature_importance(importance_df, top_k=15, title="Feature Importance A
     return fig
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 2. ERROR ANALYSIS MODULE
-# ═══════════════════════════════════════════════════════════════════════════════
+# --- Error Analysis ---
 
 def analyze_prediction_errors(y_true, y_pred, df_context=None, date_index=None):
     """
-    ───────────────────────────────────────────────────────────────────────────────
-    PHÂN TÍCH CHI TIẾT KHI NÀO MODEL DỰ BÁO SAI
-    ───────────────────────────────────────────────────────────────────────────────
+    Analyze prediction errors in detail.
+    
+    Includes: Error distribution, worst predictions, 
+    error by volatility/regime, directional accuracy.
     
     Phân tích:
     1. Error Distribution: Phân bố sai số
@@ -357,23 +351,19 @@ def plot_error_analysis(y_true, y_pred, date_index=None):
     return fig
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 3. MODEL COMPARISON REPORT
-# ═══════════════════════════════════════════════════════════════════════════════
+# --- Model Comparison Report ---
 
 def generate_model_report(models_results, y_true):
     """
-    ───────────────────────────────────────────────────────────────────────────────
-    TẠO BÁO CÁO SO SÁNH MODELS
-    ───────────────────────────────────────────────────────────────────────────────
+    Generate model comparison report.
     
-    Parameters:
+    Args:
         models_results: Dict {model_name: predictions array}
         y_true: Actual values
     
     Returns:
-        DataFrame với metrics của các models
-    ───────────────────────────────────────────────────────────────────────────────
+        DataFrame with model metrics
+    """
     """
     from sklearn.metrics import mean_squared_error, r2_score
     
@@ -411,9 +401,7 @@ def generate_model_report(models_results, y_true):
     return pd.DataFrame(report_data)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4. EXPORT UTILITIES
-# ═══════════════════════════════════════════════════════════════════════════════
+# --- Export Utilities ---
 
 def export_analysis_to_json(analysis_results, filepath):
     """Export analysis results to JSON file for reporting"""
