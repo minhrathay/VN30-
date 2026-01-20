@@ -2,7 +2,7 @@
 
 Dự án dự đoán chỉ số VN30 sử dụng mô hình ensemble kết hợp ARIMAX, XGBoost và Bi-LSTM.
 
-## ⚠️ YÊU CẦU QUAN TRỌNG
+##  YÊU CẦU QUAN TRỌNG
 
 **Python 3.11 hoặc 3.12 là BẮT BUỘC** (TensorFlow không hỗ trợ Python 3.14)
 
@@ -36,19 +36,19 @@ conda activate vn30
 pip install -r requirements.txt
 ```
 
-## 📂 Chuẩn Bị Dữ Liệu
+##  Chuẩn Bị Dữ Liệu
 
 - Đặt file CSV tên `Dữ liệu Lịch sử VN 30.csv` trong cùng thư mục với script
 - File CSV phải có các cột: `Ngày`, `Lần cuối`, `Mở`, `Cao`, `Thấp`, `KL`, `% Thay đổi`
 
-## 🚀 Chạy Chương Trình
+##  Chạy Chương Trình
 
 ```bash
 cd C:\Users\Admin\.gemini\antigravity\scratch
 python vn30_forecast_fixed.py
 ```
 
-## 📊 Kết Quả
+##  Kết Quả
 
 Script sẽ:
 1. Tiền xử lý dữ liệu và tạo các chỉ báo kỹ thuật (RSI, MACD, ATR, Bollinger Bands)
@@ -66,7 +66,7 @@ Script sẽ:
 - **RAM**: Tối thiểu 4GB
 - **Thời gian chạy**: 5-15 phút (tùy kích thước dữ liệu)
 
-## 🔍 Các Thay Đổi So Với Code Gốc
+##  Các Thay Đổi So Với Code Gốc
 
 1. ✅ Sửa lỗi `fillna(method='bfill')` → `bfill()`
 2. ✅ Cập nhật matplotlib style → `seaborn-v0_8-whitegrid`
@@ -74,7 +74,7 @@ Script sẽ:
 4. ✅ Tắt verbose output của LSTM model
 5. ✅ Gộp tất cả code vào 1 file duy nhất
 
-## 📝 Lưu Ý
+##  Lưu Ý
 
 - **Bắt buộc dùng Python 3.11 hoặc 3.12** để có đầy đủ 3 mô hình
 - Nếu máy chậm, giảm `n_estimators=3000` xuống `1000` trong XGBoost
