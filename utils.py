@@ -133,14 +133,14 @@ def create_technical_indicators(df):
     exp12 = df['Close'].ewm(span=12, adjust=False).mean()
     exp26 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = exp12 - exp26
-    df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+    df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
     
     # Bollinger Bands
-    df['MA20'] = df['Close'].rolling(window=20).mean()
+    df['BB_Middle'] = df['Close'].rolling(window=20).mean()
     df['STD20'] = df['Close'].rolling(window=20).std()
-    df['Upper_Band'] = df['MA20'] + (df['STD20'] * 2)
-    df['Lower_Band'] = df['MA20'] - (df['STD20'] * 2)
-    df['Pct_B'] = (df['Close'] - df['Lower_Band']) / (df['Upper_Band'] - df['Lower_Band'])
+    df['BB_Upper'] = df['BB_Middle'] + (df['STD20'] * 2)
+    df['BB_Lower'] = df['BB_Middle'] - (df['STD20'] * 2)
+    df['Pct_B'] = (df['Close'] - df['BB_Lower']) / (df['BB_Upper'] - df['BB_Lower'])
     
     # ATR
     high_low = df['High'] - df['Low']

@@ -535,6 +535,132 @@ if run_btn:
 # --- DISPLAY RESULTS OR QUICK START ---
 
 if 'history_preds' in st.session_state and st.session_state.history_preds:
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # 🤖 TEASER: ROBO ADVISOR SECTION (New Feature)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    st.markdown("### 🤖 Robo-Advisor Recommendation")
+    
+    # Always recalculate to ensure latest data/logic is used (Fixes N/A issue)
+    ts, td, tdr, tdet = calculate_technical_score(df)
+    st.session_state.tech_score = ts
+    st.session_state.tech_direction = td
+    st.session_state.tech_details = tdet
+
+    # -----------------------------------------------------------------------------
+    # LOGIC: INTEGRATE AI FORECAST INTO ROBO-ADVISOR SCORE
+    # -----------------------------------------------------------------------------
+    # Get Forecast Trend
+    if 'prob_forecast' in st.session_state:
+        median_trend = st.session_state.prob_forecast['median']
+        trend_pct = (median_trend[-1] - median_trend[0]) / median_trend[0] * 100
+    else:
+        trend_pct = 0.0
+
+    # Calculate AI Score Component (-2 to +2)
+    # Refined thresholds to handle near-zero values (Sideways)
+    if trend_pct >= 1.5:
+        ai_score = 2
+        ai_signal = "Strong Uptrend"
+    elif trend_pct >= 0.2:
+        ai_score = 1
+        ai_signal = "Slight Uptrend"
+    elif trend_pct > -0.2:
+        ai_score = 0
+        ai_signal = "Sideways"
+    elif trend_pct > -1.5:
+        ai_score = -1
+        ai_signal = "Slight Downtrend"
+    else:
+        ai_score = -2
+        ai_signal = "Strong Downtrend"
+
+    # Layout: Gauge Chart (Left) + Analysis Details (Right)
+    robo_c1, robo_c2 = st.columns([1, 2])
+    
+    with robo_c1:
+        # Create Plotly Gauge Chart
+        raw_tech_score = st.session_state.tech_score
+        
+        # COMBINE: Technical Score + AI Score
+        # Range: [-8, 8] + [-2, 2] = [-10, 10] roughly
+        combined_score = raw_tech_score + ai_score
+        
+        # Normalize -10 to +10  -->  0 to 10
+        # Formula: ((score + 10) / 20) * 10
+        # Actually Technical is -8 to 8. Let's clamp constraints.
+        # Let's map [-10, 10] to [0, 10]
+        score = ((combined_score + 10) / 20) * 10
+        score = max(0, min(10, score)) # Clamp 0-10
+        
+        # Determine Color & Label based on User's Thesis Description
+        if score > 6.5: # Harder to get Strong Buy
+            gauge_color = "#10b981" # Green
+            gauge_label = "STRONG BUY"
+        elif score >= 4.0:
+            gauge_color = "#eab308" # Yellow/Amber
+            gauge_label = "WAIT"
+        else:
+            gauge_color = "#ef4444" # Red
+            gauge_label = "PANIC SELL WARNING"
+            
+        fig_gauge = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = score,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            title = {'text': f"<b>{gauge_label}</b>", 'font': {'size': 20, 'color': gauge_color}},
+            gauge = {
+                'axis': {'range': [0, 10], 'tickwidth': 1, 'tickcolor': "#333"},
+                'bar': {'color': gauge_color},
+                'bgcolor': "white",
+                'borderwidth': 2,
+                'bordercolor': "#e2e8f0",
+                'steps': [
+                    {'range': [0, 4], 'color': 'rgba(239, 68, 68, 0.2)'},  # Red Zone 
+                    {'range': [4, 6.5], 'color': 'rgba(234, 179, 8, 0.2)'},  # Yellow Zone
+                    {'range': [6.5, 10], 'color': 'rgba(16, 185, 129, 0.2)'} # Green Zone 
+                ],
+                'threshold': {
+                    'line': {'color': "black", 'width': 4},
+                    'thickness': 0.75,
+                    'value': score}
+            }
+        ))
+        # Update layout with specific font and margin
+        fig_gauge.update_layout(
+            height=300, 
+            margin=dict(l=20,r=20,t=50,b=20), 
+            paper_bgcolor='white', 
+            font={'family': "Inter, sans-serif"}
+        )
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+    with robo_c2:
+        # Detailed HTML Card
+        st.markdown(f"""
+        <div style="background-color: white; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; height: 100%;">
+            <h4 style="margin-top:0; color: #1e293b;">Technical & AI Analysis Summary</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px;">
+                <div style="background: #f8fafc; padding: 10px; border-radius: 6px; border-left: 4px solid #3b82f6;">
+                    <div style="font-size: 0.8rem; color: #94a3b8; font-weight: 600;">🤖 AI MODEL FORECAST</div>
+                    <div style="font-weight: 600; color: #1e293b;">{ai_signal} ({trend_pct:+.2f}%)</div>
+                </div>
+                 <div style="background: #f8fafc; padding: 10px; border-radius: 6px;">
+                    <div style="font-size: 0.8rem; color: #94a3b8; font-weight: 600;">RSI SIGNAL</div>
+                    <div style="font-weight: 600; color: #334155;">{st.session_state.get('tech_details', {}).get('RSI', {}).get('signal', 'N/A')}</div>
+                </div>
+                <div style="background: #f8fafc; padding: 10px; border-radius: 6px;">
+                    <div style="font-size: 0.8rem; color: #94a3b8; font-weight: 600;">TREND (MA)</div>
+                    <div style="font-weight: 600; color: #334155;">{st.session_state.get('tech_details', {}).get('MA_Crossover', {}).get('signal', 'N/A')}</div>
+                </div>
+            </div>
+            <p style="color: #64748b; font-size: 0.8rem; margin-top: 15px; font-style: italic;">
+                *Score integrates both Historical Technicals and Future AI Projections.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+
     # RESULTS VIEW
     st.markdown(f"#### {icon('trending-up', '#0f172a')} Forecast Trajectory", unsafe_allow_html=True)
     
