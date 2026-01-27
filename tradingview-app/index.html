@@ -1,0 +1,2266 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forex TA Tutorial - TradingView Charts</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'tv-bg': '#f8fafc', // Slate 50 - Main background
+            'tv-bg-secondary': '#ffffff', // White
+            'tv-grid': '#e2e8f0', // Slate 200 - Borders
+            'tv-text': '#0f172a', // Slate 900 - Primary text
+            'tv-muted': '#64748b', // Slate 500 - Secondary text
+            'tv-green': '#059669', // Emerald 600 - Bullish
+            'tv-red': '#dc2626', // Red 600 - Bearish
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* ========================================
+       BASE STYLES
+       ======================================== */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+      color: #131722;
+      min-height: 100vh;
+    }
+
+    /* ========================================
+       SCROLLBAR STYLES
+       ======================================== */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f0f3fa;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #b2b5be;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #4a5568;
+    }
+
+    /* ========================================
+       ANIMATIONS
+       ======================================== */
+    .animate-pulse-slow {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: .7;
+      }
+    }
+
+    /* ========================================
+       FORM ELEMENTS
+       ======================================== */
+    select {
+      background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+      background-position: right 0.5rem center;
+      background-repeat: no-repeat;
+      background-size: 1.5em 1.5em;
+      padding-right: 2.5rem;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+    }
+
+    /* ========================================
+       SIDEBAR - Base Styles
+       ======================================== */
+    .sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 280px;
+      height: 100vh;
+      background: #ffffff;
+      border-right: 1px solid #e2e8f0;
+      overflow-y: auto;
+      z-index: 100;
+      transform: translateX(-100%);
+      transition: transform 0.3s ease, width 0.3s ease;
+    }
+
+    .sidebar.open {
+      transform: translateX(0);
+    }
+
+    /* Sidebar Overlay (Mobile) */
+    .sidebar-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 99;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .sidebar-overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    /* ========================================
+       SIDEBAR - Collapsed State
+       ======================================== */
+    .sidebar.collapsed {
+      width: 80px;
+    }
+
+    .sidebar.collapsed .lesson-card p,
+    .sidebar.collapsed .lesson-card span:not(:first-child),
+    .sidebar.collapsed .sidebar-header-text,
+    .sidebar.collapsed .sidebar-section-title,
+    .sidebar.collapsed nav>p {
+      display: none;
+    }
+
+    .sidebar.collapsed .lesson-card {
+      justify-content: center;
+      padding: 0.75rem;
+    }
+
+    .sidebar.collapsed .lesson-card .flex {
+      justify-content: center;
+    }
+
+    .sidebar.collapsed .lesson-card .flex span:first-child {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+
+    /* ========================================
+       SIDEBAR - Menu Items
+       ======================================== */
+    .lesson-card {
+      cursor: pointer;
+      position: relative;
+      z-index: 1;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+      border-left-width: 3px;
+    }
+
+    .lesson-card:hover {
+      background: #eff6ff;
+      border-color: #dbeafe;
+      border-left-color: #3b82f6;
+    }
+
+    .lesson-card.active {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      border-left-color: #2563eb;
+    }
+
+    .lesson-card.completed {
+      border-left-color: #059669;
+    }
+
+    /* Toggle Button */
+    .toggle-btn-desktop {
+      display: flex;
+    }
+
+    /* ========================================
+       MAIN CONTENT
+       ======================================== */
+    .main-content {
+      transition: margin-left 0.3s ease;
+    }
+
+    /* ========================================
+       DESKTOP RESPONSIVE (>= 1024px)
+       ======================================== */
+    @media (min-width: 1024px) {
+      .sidebar {
+        transform: translateX(0);
+      }
+
+      .main-content {
+        margin-left: 280px;
+      }
+
+      .sidebar.collapsed+.main-content,
+      body:has(.sidebar.collapsed) .main-content,
+      body:has(.sidebar.collapsed) header.main-content {
+        margin-left: 80px;
+      }
+
+      .sidebar-overlay {
+        display: none;
+      }
+    }
+
+    /* ========================================
+       QUIZ STYLES
+       ======================================== */
+    .quiz-option {
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+
+    .quiz-option:hover {
+      background: rgba(99, 102, 241, 0.2);
+    }
+
+    .quiz-option.selected {
+      background: rgba(99, 102, 241, 0.3);
+      border-color: #6366f1;
+    }
+
+    .quiz-option.correct {
+      background: rgba(38, 166, 154, 0.3);
+      border-color: #26a69a;
+    }
+
+    .quiz-option.wrong {
+      background: rgba(239, 83, 80, 0.3);
+      border-color: #ef5350;
+    }
+
+    /* ========================================
+       UTILITY CLASSES
+       ======================================== */
+    .progress-ring {
+      transform: rotate(-90deg);
+    }
+  </style>
+  <script>
+    function toggleSidebarCollapse() {
+      const sidebar = document.getElementById('sidebar');
+      const mainContents = document.querySelectorAll('.main-content');
+
+      sidebar.classList.toggle('collapsed');
+
+      const isCollapsed = sidebar.classList.contains('collapsed');
+
+      // Update main content margin manually if needed (though CSS :has handles it in modern browsers, generic support is safer)
+      mainContents.forEach(el => {
+        if (window.innerWidth >= 1024) {
+          el.style.marginLeft = isCollapsed ? '80px' : '280px';
+        }
+      });
+
+      // Save preference
+      localStorage.setItem('sidebarCollapsed', isCollapsed);
+    }
+
+    // Load preference
+    window.addEventListener('DOMContentLoaded', () => {
+      const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+      if (isCollapsed) {
+        document.getElementById('sidebar').classList.add('collapsed');
+        // Apply margin immediately
+        if (window.innerWidth >= 1024) {
+          document.querySelectorAll('.main-content').forEach(el => el.style.marginLeft = '80px');
+        }
+      }
+    });
+  </script>
+</head>
+
+<body>
+  <!-- Sidebar Overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar flex flex-col" id="sidebar">
+    <div class="p-5 border-b border-slate-200/50 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div
+          class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shrink-0">
+          <span class="text-xl">📚</span>
+        </div>
+        <div class="sidebar-header-text">
+          <h2 class="text-slate-900 font-bold" data-i18n="app_title">Trading Wiki</h2>
+          <p class="text-slate-500 text-xs" data-i18n="app_desc">Kho kiến thức giao dịch</p>
+        </div>
+      </div>
+      <!-- Collapse Button -->
+      <button onclick="toggleSidebarCollapse()"
+        class="toggle-btn-desktop w-8 h-8 hover:bg-slate-100 rounded-lg items-center justify-center text-slate-500 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+        </svg>
+      </button>
+    </div>
+
+    <script>
+      // Translation Data
+      const translations = {
+        vn: {
+          app_title: "Trading Wiki",
+          market_status: "Thị trường: Mở cửa",
+          hanoi_time: "Giờ Hà Nội (GMT+7)",
+          tab_price_action: "Hành động giá",
+          tab_sr: "Hỗ trợ & Kháng cự",
+          tab_fib: "Fibonacci & OTE",
+          tab_ma: "Moving Averages",
+          tab_smc: "SMC & ICT Concepts",
+          tab_indicators: "Chỉ báo kỹ thuật",
+          tab_methods: "Phương pháp giao dịch",
+          tab_patterns: "Mô hình nến",
+          tab_risk: "Quản lý rủi ro",
+          tab_pro: "Chiến lược Pro",
+          sidebar_intro: "Giới thiệu",
+          sidebar_pa: "Hành động giá",
+          sidebar_sr: "Hỗ trợ/Kháng cự",
+          sidebar_fib: "Fibonacci",
+          sidebar_ma: "MA & Trend",
+          sidebar_smc: "SMC & ICT",
+          sidebar_clean: "Clean Chart",
+          sidebar_psych: "Tâm lý",
+          app_desc: "Kho kiến thức giao dịch",
+          sidebar_knowledge_menu: "Danh mục kiến thức",
+          desc_indicators: "RSI, MACD, MA, Bollinger",
+          desc_methods: "Trend, S/R, Breakout",
+          desc_patterns: "Pin bar, Engulfing, Doji",
+          desc_risk: "Position sizing, R:R",
+          desc_pro: "SMC, ICT, Sessions",
+          section_indicators_title: "Khung phân tích kỹ thuật tổ chức",
+          section_methods_title: "Phương pháp giao dịch",
+          section_patterns_title: "Mô hình nến Nhật quan trọng",
+          section_risk_title: "Quản lý rủi ro & Tâm lý giao dịch",
+          section_pro_title: "Chiến lược nâng cao của Trader chuyên nghiệp",
+          rsi_level1_title: "Level 1: Bẫy Retail",
+          rsi_level1_myth: "Huyền thoại: 'RSI > 70 = BÁN, RSI < 30 = MUA'",
+          rsi_trap_title: "⚠️ CÁI BẪY:",
+          rsi_trap_content: "Trong strong momentum, RSI có thể 'embedded' > 70 hoặc < 30 rất lâu. Short vì RSI=71 trong uptrend mạnh = MARGIN CALL!",
+          rsi_trap_tip: "💡 RSI > 70 không phải quá mua (exhaustion) - mà là tăng tốc (velocity acceleration)!",
+          rsi_level2_title: "Level 2: Chế độ xu hướng",
+          rsi_range_shift: "Constance Brown's Range Shift:",
+          rsi_bull_market: "📈 Bull Market: RSI 40-90",
+          rsi_bull_support: "40-50 = Vùng hỗ trợ → BUY dip",
+          rsi_bear_market: "📉 Bear Market: RSI 10-60",
+          rsi_bear_resistance: "50-60 = Vùng kháng cự → SELL rally",
+          rsi_hidden_div: "💡 Hidden Divergence: Giá LL + RSI HL = Tiếp diễn xu hướng!",
+          rsi_level3_title: "Level 3: Quant/Algo",
+          rsi_connors_strategy: "Chiến lược RSI(2) (Larry Connors):",
+          rsi_connors_rules: "• Giá > SMA 200 (lọc xu hướng)<br>• Entry: RSI(2) < 5<br>• Exit: Giá > SMA 5",
+          rsi_composite_index: "Composite Index (Constance Brown):",
+          rsi_composite_desc: "→ RSI 'không giới hạn' (Unbounded), phát hiện failure swing sớm!",
+          // Indicators Section New Keys
+          section_indicators_subtitle: "Framework Phân tích Kỹ thuật Tổ chức",
+          rsi_title: "RSI - Bậc thầy Momentum",
+          rsi_subtitle: "J. Welles Wilder (1978) • Chỉ số Sức mạnh Tương đối",
+          rsi_formula_label: "📐 Công thức Toán học (Wilder's Smoothing):",
+          rsi_formula_note: "⚠️ Wilder's smoothing ≠ SMA. Retail platforms thường dùng SMA - cho tín hiệu sai!",
+          // Bollinger Bands
+          bb_title: "Bollinger Bands - Động cơ Biến động",
+          bb_subtitle: "John Bollinger • Bao bì Độ lệch chuẩn",
+          bb_formula_label: "📐 Công thức Toán học:",
+          bb_level1_title: "Level 1: Cái Bẫy",
+          bb_level1_myth: "Huyền thoại: 'Mua biên dưới, bán biên trên'",
+          bb_level1_walking_title: "⚠️ 'Đi trên dây' (Walking the Bands):",
+          bb_level1_walking_desc: "Trong volatility breakout, giá đóng cửa NGOÀI bands và tiếp tục bám bands. Mean reversion traders bị thanh lý khi giá đi 3-4 SD!",
+          bb_level1_tip: "💡 Biến động tự tương quan: Volatility cao → Tiếp tục cao!",
+          bb_level2_title: "Level 2: Squeeze & Head Fake",
+          bb_level2_squeeze_title: "🔥 The Squeeze:",
+          bb_level2_squeeze_desc: "BandWidth = Thấp nhất 6 tháng\n→ Năng lượng tích tụ cho cú move lớn!",
+          bb_level2_fake_title: "🎭 Head Fake (Giả):",
+          bb_level2_fake_desc: "Breakout sau squeeze LÊN → Đảo chiều XUỐNG\n→ Cú move đầu là thăm dò thanh khoản!",
+          bb_level2_action: "💡 Hành động: Trade sự THẤT BẠI của breakout, không phải breakout!",
+          bb_level3_title: "Level 3: Ứng dụng Quant",
+          bb_level3_rsi_title: "📊 Bollinger trên RSI:",
+          bb_level3_rsi_desc: "Vẽ BB(20,2) lên RSI(14)\nRSI phá bands → quay lại = tín hiệu đảo chiều",
+          bb_level3_vol_title: "💥 Volatility Breakout:",
+          bb_level3_vol_desc: "Close > Upper Band + Vol > 150% avg\n+ BandWidth tăng\n→ Buy Stop trên nến breakout!",
+          // VWAP & CHOP
+          // VWAP & CHOP - Simplified
+          vwap_title: "VWAP (Giá Bình Quân)",
+          vwap_subtitle: "Đường 'Giá Trị Thực' của thị trường",
+          vwap_analogy: "💡 Tư duy đơn giản:",
+          vwap_usage_title: "Chiến thuật Tổ chức:",
+          vwap_algo_title: "Logic:",
+          vwap_algo_desc: "Mua tại VWAP (Giá gốc). Trend Day: Giá bám trên VWAP = Tăng mạnh.",
+          chop_title: "Choppiness (Độ Nhiễu)",
+          chop_subtitle: "Bộ lọc: Biển Động vs Biển Lặng",
+          chop_analogy: "💡 Tư duy đơn giản:",
+          chop_trending: "CÓ TREND (< 38.2)",
+          chop_choppy: "SIDEWAY (> 61.8)",
+          chop_tip_title: "💡 Mẹo Pro:",
+          chop_tip_desc: "Biển động (CHOP cao) -> Đứng ngoài. Biển lặng (CHOP thấp) -> Vào lệnh.",
+
+          // Actionable Setup
+          actionable_title: "🎯 Chiến lược: 'Bắt Đáy An Toàn'",
+          actionable_step1: "1. Xu hướng Tăng: Giá > 200 SMA",
+          actionable_step2: "2. RSI 'nghỉ mệt': Về vùng 40-50",
+          actionable_step3: "3. Vào lệnh: Nến xanh đảo chiều (Pinbar/Engulfing)",
+          actionable_step4: "4. Quản lý vốn: SL dưới đáy nến, TP tại BB trên",
+          actionable_sl: "🛑 Stop Loss (Cắt lỗ): Dưới đáy nến vừa tạo",
+          actionable_tp: "🎯 Take Profit (Chốt lời): Khi giá chạm dải BB trên",
+          // Trading Methods
+          method_trend_title: "1. Trend Following (Giao dịch theo xu hướng)",
+          method_trend_sub: "Phương pháp phổ biến nhất, dễ áp dụng",
+          method_trend_rule_label: "Nguyên tắc:",
+          method_trend_rule_desc: "'Trend is your friend' - Chỉ giao dịch theo hướng của xu hướng chính.",
+          method_trend_identify: "📋 Cách xác định xu hướng:",
+          method_trend_uptrend_ema: "Giá trên EMA 200 = Uptrend",
+          method_trend_downtrend_ema: "Giá dưới EMA 200 = Downtrend",
+          method_trend_uptrend_pa: "Đỉnh sau cao hơn + Đáy sau cao hơn (HH + HL) = Uptrend",
+          method_trend_downtrend_pa: "Đỉnh sau thấp hơn + Đáy sau thấp hơn (LH + LL) = Downtrend",
+          method_trend_entry_title: "✅ Chiến lược Vào lệnh:",
+          method_trend_entry_1: "Xác định xu hướng chính (Daily chart)",
+          method_trend_entry_2: "Chờ pullback về EMA 20/50",
+          method_trend_entry_3: "Vào lệnh khi có nến confirmation",
+          method_trend_entry_4: "Stop Loss dưới swing low gần nhất",
+          method_trend_entry_5: "Take Profit: Risk:Reward tối thiểu 1:2",
+          // Support & Resistance
+          method_sr_title: "2. Support & Resistance Trading",
+          method_sr_sub: "Giao dịch tại vùng hỗ trợ/kháng cự",
+          method_sr_rule: "Nguyên tắc: Giá có xu hướng đảo chiều tại các vùng S/R quan trọng.",
+          method_sr_draw_title: "📋 Cách vẽ S/R:",
+          method_sr_draw_1: "Xác định đỉnh/đáy quan trọng (swing points)",
+          method_sr_draw_2: "Vẽ đường ngang qua các điểm đó",
+          method_sr_draw_3: "Càng nhiều lần test = càng mạnh",
+          method_sr_draw_4: "Support bị phá vỡ → thành Resistance",
+          method_sr_bounce_title: "💎 Chiến lược Bounce:",
+          method_sr_bounce_1: "Giá tiến đến vùng S/R",
+          method_sr_bounce_2: "Chờ nến rejection (Pin bar, Engulfing)",
+          method_sr_bounce_3: "Vào lệnh ngược hướng",
+          method_sr_bounce_4: "Stop Loss qua vùng S/R",
+          // Breakout
+          method_break_title: "3. Breakout Trading",
+          method_break_sub: "Giao dịch phá vỡ",
+          method_break_rule: "Nguyên tắc: Vào lệnh khi giá phá vỡ vùng tích lũy hoặc S/R.",
+          method_break_distinguish_title: "⚠️ Phân biệt Breakout thật/giả:",
+          method_break_real: "Thật: Volume tăng mạnh, nến đóng qua vùng",
+          method_break_fake: "Giả: Volume thấp, nến có bóng dài",
+          method_break_confirm: "Chờ retest để xác nhận breakout",
+          method_break_strat_title: "🔥 Chiến lược Breakout + Retest:",
+          method_break_strat_1: "Xác định vùng consolidation/Range",
+          method_break_strat_2: "Chờ nến breakout với volume",
+          method_break_strat_3: "Chờ giá retest vùng vừa phá",
+          method_break_strat_4: "Vào lệnh khi có confirmation",
+          method_break_strat_5: "SL dưới/trên vùng retest",
+          // Price Action
+          method_pa_title: "4. Price Action Trading",
+          method_pa_sub: "Giao dịch thuần túy theo hành động giá - 'Chart tells everything'",
+          method_pa_rule: "Nguyên tắc cốt lõi: Chỉ dùng biểu đồ nến, không cần indicators. Giá là leading indicator duy nhất!",
+          method_pa_concepts_title: "📚 Các khái niệm chính:",
+          method_pa_concept_1: "Trend Structure (HH/HL, LH/LL)",
+          method_pa_concept_2: "Supply & Demand Zones",
+          method_pa_concept_3: "Candlestick Patterns",
+          method_pa_concept_4: "Chart Patterns (Triangles, Head & Shoulders)",
+          method_pa_why_title: "💡 Tại sao chọn Price Action?",
+          method_pa_why_1: "Loại bỏ độ trễ (Lag) của indicators",
+          method_pa_why_2: "Hiểu tâm lý thị trường thực tế",
+          method_pa_why_3: "Rèn luyện kỹ năng đọc chart (quan trọng nhất)",
+          // Patterns
+          pattern_engulfing_title: "Bullish/Bearish Engulfing (Nhấn chìm)",
+          pattern_engulfing_sub: "Tín hiệu đảo chiều mạnh mẽ",
+          pattern_engulfing_desc: "Nến 2 bao trùm hoàn toàn nến 1. Thể hiện phe mua/bán đã kiểm soát hoàn toàn.",
+          pattern_pinbar_title: "Pin Bar (Hammer/Shooting Star)",
+          pattern_pinbar_sub: "Tín hiệu từ chối giá (Rejection)",
+          pattern_pinbar_desc: "Bóng nến dài thể hiện sự từ chối giá tại vùng quan trọng. Đóng nến ngược chiều bóng nến.",
+          pattern_doji_title: "Doji Patterns",
+          pattern_doji_sub: "Sự lưỡng lự của thị trường",
+          pattern_doji_desc: "Giá mở/đóng xấp xỉ nhau. Báo hiệu sự cân bằng cung cầu, chuẩn bị có biến động lớn.",
+          pattern_inside_title: "Inside Bar",
+          pattern_inside_sub: "Sự nén giá (Consolidation)",
+          pattern_inside_desc: "Nến con nằm gọn trong nến mẹ. Báo hiệu tích lũy cho cú breakout sắp tới.",
+          // Risk Management
+          risk_title: "Quản lý rủi ro & Tâm lý",
+          risk_sub: "Yếu tố sống còn của Trader - Quyết định 90% thành công",
+          risk_position_title: "Position Sizing (Khối lượng)",
+          risk_position_desc: "Không bao giờ rủi ro quá 2% vốn/lệnh.",
+          risk_rr_title: "R:R Ratio (Risk/Reward)",
+          risk_rr_desc: "Tối thiểu 1:2. Thua 1 mất 1, Thắng 1 được 2.",
+          risk_psy_title: "Tâm lý Giao dịch (Psychology)",
+          risk_psy_fomo: "Không FOMO - Cơ hội luôn còn đó",
+          risk_psy_revenge: "Không Revenge Trade - Thua là nghỉ",
+          risk_psy_patience: "Kiên nhẫn - Chờ setup đẹp mới vào",
+          // Pro Strategies (SMC) - Simplified
+          section_pro_title: "Chiến thuật Cá Mập (Smart Money)",
+          pro_smc_sub: "Cách các quỹ lớn giao dịch - Bơi cùng Cá Mập",
+          pro_ob_title: "Order Block (Vùng Cản Cá Mập)",
+          pro_ob_desc: "Là nơi 'Cá Mập' (Big Boys) để lại dấu chân. Nó chính là nến giảm cuối cùng trước khi giá tăng mạnh. Khi giá quay lại đây -> MUA.",
+          pro_fvg_title: "Fair Value Gap (Khoảng Trống Giá)",
+          pro_fvg_desc: "Là vùng giá bị 'nhảy cóc' quá nhanh, để lại một khoảng trống. Giá có xu hướng quay lại để 'lấp đầy' khoảng trống này.",
+          pro_liquidity_title: "Liquidity (Thanh khoản/Bẫy)",
+          pro_bsl: "Buy-Side Liquidity: Nơi đám đông đặt Stop Loss của lệnh Sell (trên đỉnh cũ). Cá Mập sẽ đẩy giá lên đây để 'quét' Stop Loss.",
+          pro_ssl: "Sell-Side Liquidity: Nơi đám đông đặt Stop Loss của lệnh Buy (dưới đáy cũ). Cá Mập sẽ đạp giá xuống đây để 'quét' Stop Loss.",
+          pro_structure_title: "Cấu trúc Thị trường",
+          pro_bos: "BOS (Phá vỡ): Giá phá đỉnh/đáy cũ -> Xu hướng tiếp tục.",
+          pro_choch: "CHoCH (Đảo chiều): Tín hiệu sớm cho thấy xu hướng sắp đổi chiều.",
+          pro_entry_model: "Mô hình Vào lệnh Chuẩn:",
+          pro_bias: "1. Xác định hướng (Trend) trên D1/H4.",
+          pro_sweep: "2. Chờ giá 'quét' Stop Loss (Liquidity Sweep).",
+          pro_waiting_choch: "3. Chờ tín hiệu đảo chiều (CHoCH) ở M15.",
+          pro_entry_fvg: "4. Vào lệnh tại FVG hoặc Order Block.",
+          // Advanced Concepts (MTF, Sessions, ICT)
+          mtf_title: "Multi-Timeframe Analysis (MTF)",
+          mtf_sub: "Top-Down Analysis - Phân tích từ khung lớn xuống nhỏ",
+          mtf_daily_bias: "BIAS: Xác định xu hướng chính, key levels",
+          mtf_4h_structure: "STRUCTURE: Phân tích cấu trúc, tìm vùng entry",
+          mtf_15m_entry: "ENTRY: Tìm điểm entry chính xác, confirmation",
+          mtf_rule: "⚠️ Quy tắc vàng: Higher timeframe = Higher importance. Chỉ trade theo khung lớn!",
+          conf_title: "Confluence Trading",
+          conf_sub: "Kết hợp nhiều yếu tố = Xác suất thắng cao",
+          conf_checklist: "📋 Confluence Checklist:",
+          conf_trend: "Trend direction (HTF bias)",
+          conf_level: "Key Support/Resistance level",
+          conf_fib: "Fibonacci level (0.618, 0.786)",
+          conf_ema: "EMA/MA confluence",
+          conf_pattern: "Candlestick pattern confirmation",
+          conf_grade_bad: "1-2 yếu tố: ❌ KHÔNG TRADE",
+          conf_grade_ok: "3-4 yếu tố: ⚠️ Small size",
+          conf_grade_good: "5+ yếu tố: ✅ HIGH PROBABILITY",
+          session_title: "Session Trading & Killzones",
+          session_sub: "Trade đúng thời điểm = Higher Winrate",
+          session_london: "London Session (14:00 - 23:00)",
+          session_london_desc: "Volume cao nhất. Thường tạo High/Low trong ngày.",
+          session_ny: "New York Session (19:00 - 04:00)",
+          session_ny_desc: "Volume rất cao. Thường có reversal mạnh.",
+          session_asian: "Asian Session (06:00 - 14:00)",
+          session_asian_desc: "Volume thấp, sideway. Tạo liquidity cho London.",
+          amd_title: "ICT Power of 3 (AMD)",
+          amd_sub: "Accumulation → Manipulation → Distribution",
+          amd_acc: "1. Accumulation: Tích lũy (Asian)",
+          amd_man: "2. Manipulation: Bẫy giá (London Open)",
+          amd_dis: "3. Distribution: Xu hướng thật (NY)",
+          ict_sb_title: "ICT Silver Bullet",
+          ict_sb_desc: "Setup entry theo giờ cụ thể với FVG (10h, 16h, 21h)",
+          ict_judas: "Judas Swing (False Move): Cú lừa đầu phiên",
+        },
+        en: {
+          app_title: "Trading Wiki",
+          market_status: "Market Open",
+          hanoi_time: "Hanoi Time (GMT+7)",
+          tab_price_action: "Price Action",
+          tab_sr: "Support & Resistance",
+          tab_fib: "Fibonacci & OTE",
+          tab_ma: "Moving Averages",
+          tab_smc: "SMC & ICT Concepts",
+          tab_indicators: "Technical Indicators",
+          tab_methods: "Trading Methods",
+          tab_patterns: "Candlestick Patterns",
+          tab_risk: "Risk Management",
+          tab_pro: "Pro Strategies",
+          sidebar_intro: "Introduction",
+          sidebar_pa: "Price Action",
+          sidebar_sr: "Support/Resistance",
+          sidebar_fib: "Fibonacci",
+          sidebar_ma: "MA & Trend",
+          sidebar_smc: "SMC & ICT",
+          sidebar_clean: "Clean Chart",
+          sidebar_psych: "Psychology",
+          app_desc: "Trading Knowledge Base",
+          sidebar_knowledge_menu: "Knowledge Menu",
+          desc_indicators: "RSI, MACD, MA, Bollinger",
+          desc_methods: "Trend, S/R, Breakout",
+          desc_patterns: "Pin bar, Engulfing, Doji",
+          // Indicators Section New Keys EN
+          section_indicators_subtitle: "Institutional Technical Analysis Framework",
+          rsi_title: "RSI - The Momentum Master",
+          rsi_subtitle: "J. Welles Wilder (1978) • Relative Strength Index",
+          rsi_formula_label: "📐 Mathematical Formula (Wilder's Smoothing):",
+          rsi_formula_note: "⚠️ Wilder's smoothing ≠ SMA. Retail platforms often use SMA - giving false signals!",
+          // Bollinger Bands
+          bb_title: "Bollinger Bands - The Volatility Engine",
+          bb_subtitle: "John Bollinger • Standard Deviation Envelopes",
+          bb_formula_label: "📐 Mathematical Formula:",
+          // RSI Section - Expanded
+          rsi_level1_title: "Level 1: The Retail Trap (Cạm bẫy)",
+          rsi_level1_p1: "Rất nhiều trader mới mắc sai lầm nghiêm trọng khi tin rằng RSI > 70 là 'Quá mua' (Overbought) và nên Bán ngay lập tức. Đây là một tư duy nguy hiểm.",
+          rsi_level1_p2: "Trong một xu hướng tăng mạnh (Strong Uptrend), RSI có thể duy trì trên vùng 70 trong nhiều ngày, thậm chí nhiều tuần. Việc bán khống (Short) chỉ vì RSI > 70 giống như việc đứng chặn trước một đoàn tàu cao tốc đang lao tới.",
+          rsi_trap_title: "⚠️ CẢNH BÁO CHÁY TÀI KHOẢN:",
+          rsi_trap_desc: "Bán đỉnh khi RSI > 70 trong Uptrend mạnh là nguyên nhân số 1 khiến tài khoản bốc hơi. RSI > 70 lúc này thể hiện SỨC MẠNH (Velocity Acceleration), không phải sự kiệt sức.",
+
+          rsi_level2_title: "Level 2: Trend Regimes (Chế độ Xu hướng)",
+          rsi_level2_p1: "Trader chuyên nghiệp như Constance Brown không dùng mốc 30/70 cố định. Họ quan sát sự dịch chuyển của vùng dao động (Range Shift) để xác định xu hướng thật sự.",
+          rsi_bull_title: "📈 Thị trường Bò (Bull Market):",
+          // RSI - Simplified & Analogies
+          rsi_level1_title: "Level 1: Bẫy Sơ đẳng (Tuyệt đối tránh)",
+          rsi_level1_myth: "Sai lầm: 'Cứ trên 70 là Bán, dưới 30 là Mua'",
+          rsi_level1_p1: "Hãy tưởng tượng bạn đang lái xe với tốc độ 100km/h (RSI > 70). Bạn có nhảy ra khỏi xe không? Không! Bạn đang có đà (Momentum) rất mạnh.",
+          rsi_level1_p2: "Trong một xu hướng tăng mạnh, RSI > 70 nghĩa là 'xe đang tăng tốc', không phải 'xe sắp dừng'. Bán lúc này là chặn đầu xe lửa.",
+          rsi_trap_title: "⚠️ Cạm bẫy:",
+          rsi_trap_content: "RSI có thể nằm trên vùng 70 hàng tuần liền trong Uptrend. Nếu bạn cứ Bán vì 'nó cao quá rồi', bạn sẽ cháy tài khoản.",
+
+          rsi_level2_title: "Level 2: Tư duy theo Xu hướng (Trend)",
+          rsi_bull_market: "📈 Thị trường Bò (Uptrend):",
+          rsi_bull_desc: "Trong Uptrend, RSI hiếm khi rớt xuống dưới 40. Vùng 40-50 là 'Sàn đỡ'. Khi giá hồi về đây → Cơ hội MUA giá tốt.",
+          rsi_bear_market: "📉 Thị trường Gấu (Downtrend):",
+          rsi_bear_desc: "Trong Downtrend, RSI hiếm khi vượt quá 60. Vùng 50-60 là 'Trần cản'. Khi giá hồi lên đây → Cơ hội BÁN.",
+          rsi_hidden_div: "💡 Bí mật: Khi Giá tạy đáy thấp hơn, nhưng RSI tạo đáy cao hơn = Phân kỳ ẩn. Tín hiệu MUA tiếp diễn xu hướng cực mạnh!",
+
+          rsi_level3_title: "Level 3: Chiến thuật Pro (Algo)",
+          rsi_connors_title: "Chiến thuật 'Bắt dao rơi' (RSI 2):",
+          rsi_connors_desc: "Dùng RSI chu kỳ cực ngắn (2) để bắt đáy trong Uptrend. Quy tắc: Chỉ mua khi giá tổng thể đang Tăng, nhưng ngắn hạn bị bán tháo quá đà (RSI 2 < 5).",
+          rsi_composite_title: "Composite Index (Nâng cao):",
+          rsi_composite_desc: "Một phiên bản RSi 'không bị giới hạn'. Nó giúp phát hiện những tín hiệu đảo chiều mà RSI thường không thấy được.",
+
+          // Bollinger Bands - Simplified
+          bb_level1_title: "Level 1: Sai lầm 'Ping Pong'",
+          bb_level1_p1: "Nhiều người nghĩ BB giống bàn bóng bàn: đập cạnh trên thì dội xuống, đập cạnh dưới thì nảy lên. Sai lầm!",
+          bb_walk_title: "⚠️ Hiện tượng 'Bám dải' (Walking the Bands):",
+          bb_walk_desc: "Khi thị trường vào trend mạnh, giá sẽ 'dính chặt' vào dải trên và đi lên mãi. Ai chặn đầu bán xuống sẽ thua lỗ nặng.",
+
+          bb_level2_title: "Level 2: Nút thắt cổ chai (The Squeeze)",
+          bb_level2_p1: "Hãy tưởng tượng chiếc lò xo bị nén chặt. Hai dải BB co lại rất hẹp. Đây là lúc thị trường 'ngủ yên' để tích lũy năng lượng.",
+          bb_fake_title: "🎭 Cú lừa (Head Fake):",
+          bb_fake_desc: "Thường giá sẽ giả vờ phá vỡ một đầu (Ví dụ: Giả vờ tăng) để dụ người mua, sau đó quay đầu giảm mạnh. Kinh nghiệm: Chờ cú lừa xong hãy vào lệnh!",
+
+          bb_level3_title: "Level 3: Bắt sóng lớn (Volatility Break)",
+          bb_level3_p1: "Không cần đoán hướng! Chỉ cần biết 'lò xo sắp bung'. Khi nến đóng cửa dứt khoát ra ngoài dải biên + Volume lớn → Đi theo hướng đó.",
+          bb_vol_layout: "📝 Công thức bắt sóng:",
+          bb_vol_step1: "1. Chờ BB co thắt hẹp (Squeeze).",
+          bb_vol_step2: "2. Chờ một cây nến thân dài phá vỡ dải.",
+          bb_vol_step3: "3. Đặt lệnh theo hướng phá vỡ (Breakout).",
+
+          // Actionable Setup
+          actionable_title: "🎯 Setup thực chiến: 'Bắt đáy trong Trend tăng'",
+          actionable_step1: "1. Xu hướng chính: Giá nằm trên đường 200 SMA (Uptrend).",
+          actionable_step2: "2. Chờ chỉnh: RSI(14) hồi về vùng 40-50 (Vùng hỗ trợ).",
+          actionable_step3: "3. Lọc nhiễu: Chờ một nến xanh xác nhận (Pinbar/Engulfing).",
+          actionable_step4: "4. Vào lệnh: Mua ngay khi nến xác nhận đóng cửa.",
+          actionable_sl: "🛑 Cắt lỗ: Dưới đáy nến vừa tạo.",
+          actionable_tp: "🎯 Chốt lời: Khi RSI lên lại 70-80 hoặc chạm dải Bollinger trên.",
+
+          // RSI Key Fix
+          rsi_trap_desc: "RSI có thể nằm trên vùng 70 hàng tuần liền trong Uptrend. Nếu bạn cứ Bán vì 'nó cao quá rồi', bạn sẽ cháy tài khoản.",
+
+          // Trading Methods - Simplified with Analogies
+          method_trend_title: "1. Trend Following (Đánh theo xu hướng)",
+          method_trend_desc: "Phương pháp an toàn nhất. Tư duy: 'Nước chảy chỗ trũng'. Đừng cố chặn đầu dòng nước, hãy bơi cùng nó.",
+          method_trend_step1_title: "Bước 1: Xác định Dòng chảy (Trend)",
+          method_trend_step1_desc: "Nhìn chart Daily/H4. Giá nằm TRÊN đường EMA 200 = Uptrend (Chỉ canh Mua). Giá nằm DƯỚI = Downtrend (Chỉ canh Bán).",
+          method_trend_step2_title: "Bước 2: Chờ Nhịp nghỉ (Pullback)",
+          method_trend_step2_desc: "Giá không bao giờ chạy thẳng. Hãy chờ nó 'nghỉ mệt' và hồi về các vùng giá trị (EMA 20/50) hoặc Hỗ trợ cũ.",
+          method_trend_step3_title: "Bước 3: Bóp cò (Trigger)",
+          method_trend_step3_desc: "Khi giá về vùng hồi, đừng mua ngay! Chờ một tín hiệu xác nhận (Nến Pinbar/Engulfing) cho thấy phe mua đã quay lại. Bùm!",
+
+          method_sr_title: "2. Support & Resistance (Cản tâm lý)",
+          method_sr_desc: "Tư duy: 'Sàn nhà và Trần nhà'. Giá chạm sàn (Support) thì bật lên, chạm trần (Resistance) thì dội xuống.",
+          method_sr_concept_title: "Quy luật Đảo chiều:",
+          method_sr_concept_desc: "Vùng cản càng được test nhiều lần thì càng cứng. NHƯNG nếu test quá nhiều (3-4 lần), nó giống như cánh cửa bị đập liên tục -> sẽ vỡ (Breakout).",
+          method_sr_bounce_step1: "1. Giá tiếp cận Cản: Quan sát tốc độ nến (nến nhỏ lại = đà yếu).",
+          method_sr_bounce_step2: "2. Phản ứng: Xuất hiện bóng nến dài (Từ chối giá).",
+          method_sr_bounce_step3: "3. Vào lệnh: Mua khi nến đóng cửa xanh mạnh tại Hỗ trợ.",
+
+          method_break_title: "3. Breakout Trading (Đánh phá vỡ)",
+          method_break_desc: "Dành cho người thích cảm giác mạnh. Bắt trọn con sóng lớn khi 'cái lò xo' bung ra.",
+          method_break_real_title: "Phá vỡ Thật (True Break):",
+          method_break_real_desc: "Nến thân dài, đóng cửa dứt khoát qua vùng cản. Volume tăng vọt (gấp đôi bình thường).",
+          method_break_fake_title: "Bẫy Giá (Fakeout):",
+          method_break_fake_desc: "Giá thọc qua cản nhưng rút râu xù xì lại. Volume thấp. Đây là cái bẫy để 'giết' những người vội vã.",
+          method_break_retest_title: "Chiến thuật Retest (An toàn):",
+          method_break_retest_desc: "Đừng đu theo cây nến Breakout đầu tiên (dễ dính bẫy). Hãy chờ giá quay lại 'kiểm tra' vùng vừa phá. Nếu nó giữ được -> Mua.",
+
+          // Price Action VN - Simplified
+          method_pa_title: "4. Price Action (Hành động giá)",
+          method_pa_sub: "Đọc hiểu ngôn ngữ của nến - Không cần chỉ báo!",
+          method_pa_principle_title: "Nguyên tắc Cốt lõi:",
+          method_pa_principle_desc: "Chỉ dùng biểu đồ nến, loại bỏ tất cả indicators gây nhiễu. Giá là chỉ báo duy nhất không có độ trễ (Leading Indicator).",
+          method_pa_structure_title: "📊 Swing Structure (Cấu trúc sóng):",
+          method_pa_key_title: "🎯 Key Levels quan trọng:",
+          method_pa_entry_title: "🔥 Quy trình vào lệnh:",
+          styles_title: "So sánh Phong cách Giao dịch",
+          // Patterns VN
+          pattern_engulfing_title: "Bộ nến Nhấn chìm (Engulfing)",
+          pattern_engulfing_sub: "Tín hiệu đảo chiều mạnh",
+          pattern_engulfing_desc: "Nến sau 'nuốt chửng' hoàn toàn thân nến trước. Cho thấy phe mua/bán đã kiểm soát hoàn toàn cuộc chơi.",
+          pattern_pinbar_title: "Pin Bar (Cây đinh ba)",
+          pattern_pinbar_sub: "Tín hiệu từ chối giá (Rejection)",
+          pattern_pinbar_desc: "Bóng nến dài gấp 2-3 lần thân. Đuôi nến chọc vào vùng cản và bị đẩy ngược lại quyết liệt.",
+          pattern_doji_title: "Nến Doji",
+          pattern_doji_sub: "Sự lưỡng lự của thị trường",
+          pattern_doji_desc: "Giá đóng cửa gần bằng giá mở cửa. Bên mua và bên bán đang giằng co quyết liệt. Chờ nến xác nhận tiếp theo.",
+          pattern_inside_title: "Inside Bar (Mẹ bồng con)",
+          pattern_inside_sub: "Tích lũy & Nén giá",
+          pattern_inside_desc: "Nến con nằm lọt thỏm trong nến mẹ. Thị trường đang nén lại như lò xo, chuẩn bị cho cú bung mạnh (Breakout).",
+          // Price Action EN
+          method_pa_title: "4. Price Action Trading",
+          method_pa_sub: "Pure price trading - 'Chart tells everything'",
+          method_pa_principle_title: "Core Principle:",
+          method_pa_principle_desc: "Only use candlestick charts, no indicators. Price is the only leading indicator!",
+          method_pa_structure_title: "📊 Swing Structure:",
+          method_pa_key_title: "🎯 Key Levels:",
+          method_pa_entry_title: "🔥 Entry Process:",
+          styles_title: "Trading Style Comparison",
+          // Patterns EN
+          pattern_engulfing_title: "Bullish/Bearish Engulfing",
+          pattern_engulfing_sub: "Strong reversal signal",
+          pattern_engulfing_desc: "Candle 2 completely engulfs Candle 1. Shows buyers/sellers have taken full control.",
+          pattern_pinbar_title: "Pin Bar (Hammer/Shooting Star)",
+          pattern_pinbar_sub: "Price Rejection Signal",
+          pattern_pinbar_desc: "Long wick shows rejection at key level. Close is opposite to the wick.",
+          pattern_doji_title: "Doji Patterns",
+          pattern_doji_sub: "Market Indecision",
+          pattern_doji_desc: "Open and close prices are nearly equal. Signals balance between supply and demand.",
+          pattern_inside_title: "Inside Bar",
+          pattern_inside_sub: "Price Consolidation",
+          pattern_inside_desc: "Child candle contained within Mother candle. Signals consolidation before potential breakout.",
+          // Risk Management EN
+          risk_title: "Risk Management & Psychology",
+          risk_sub: "The Survival Kit - Decides 90% of success",
+          risk_position_title: "Position Sizing",
+          risk_position_desc: "Never risk more than 2% of equity per trade.",
+          risk_rr_title: "R:R Ratio (Risk/Reward)",
+          risk_rr_desc: "Minimum 1:2. Lose 1, Win 2.",
+          risk_psy_title: "Trading Psychology",
+          risk_psy_fomo: "No FOMO - The market is always there",
+          risk_psy_revenge: "No Revenge Trading - Accept losses",
+          risk_psy_patience: "Patience - Wait for the perfect setup",
+          // Pro Strategies (SMC) EN
+          pro_smc_title: "Professional Trader Strategies",
+          pro_smc_sub: "Smart Money Concepts & ICT Methodology",
+          pro_ob_title: "Order Block (OB)",
+          pro_ob_desc: "Institutional footprint. Last bearish candle before strong rally (Bullish OB).",
+          pro_fvg_title: "Fair Value Gap (FVG)",
+          pro_fvg_desc: "Price imbalance. Price tends to return to fill this gap.",
+          pro_liquidity_title: "Liquidity Concepts",
+          pro_bsl: "Buy-Side Liquidity (BSL) = Stop hunt Sellers",
+          pro_ssl: "Sell-Side Liquidity (SSL) = Stop hunt Buyers",
+          pro_structure_title: "Market Structure",
+          pro_bos: "BOS: Break of Structure (Continuation)",
+          pro_choch: "CHoCH: Change of Character (Reversal)",
+          pro_entry_model: "Standard SMC Entry Model",
+          pro_bias: "1. Determine Bias (Daily/4H)",
+          pro_sweep: "2. Wait for Liquidity Sweep",
+          pro_waiting_choch: "3. Wait for LTF CHoCH",
+          pro_entry_fvg: "4. Enter at FVG/OB after CHoCH",
+          // Advanced Concepts EN
+          mtf_title: "Multi-Timeframe Analysis (MTF)",
+          mtf_sub: "Top-Down Analysis - Big picture first",
+          mtf_daily_bias: "BIAS: Main trend direction & Key levels",
+          mtf_4h_structure: "STRUCTURE: Market structure & POI",
+          mtf_15m_entry: "ENTRY: Precision entry & Confirmation",
+          mtf_rule: "⚠️ Golden Rule: Higher timeframe = Higher importance. Trade with the HTF trend!",
+          conf_title: "Confluence Trading",
+          conf_sub: "Combining factors = Higher Probability",
+          conf_checklist: "📋 Confluence Checklist:",
+          conf_trend: "Trend direction (HTF bias)",
+          conf_level: "Key Support/Resistance level",
+          conf_fib: "Fibonacci level (0.618, 0.786)",
+          conf_ema: "EMA/MA confluence",
+          conf_pattern: "Candlestick pattern confirmation",
+          conf_grade_bad: "1-2 factors: ❌ NO TRADE",
+          conf_grade_ok: "3-4 factors: ⚠️ Small size",
+          conf_grade_good: "5+ factors: ✅ HIGH PROBABILITY",
+          session_title: "Session Trading & Killzones",
+          session_sub: "Timing is everything",
+          session_london: "London Session (14:00 - 23:00)",
+          session_london_desc: "Highest Volume. Often forms High/Low of day.",
+          session_ny: "New York Session (19:00 - 04:00)",
+          session_ny_desc: "High Volume. Often has strong reversals.",
+          session_asian: "Asian Session (06:00 - 14:00)",
+          session_asian_desc: "Low Volume, Sideways. Creates liquidity.",
+          amd_title: "ICT Power of 3 (AMD)",
+          amd_sub: "Accumulation → Manipulation → Distribution",
+          amd_acc: "1. Accumulation: Smart money builds position",
+          amd_man: "2. Manipulation: Fake move to trap retail",
+          amd_dis: "3. Distribution: The real move",
+          ict_sb_title: "ICT Silver Bullet",
+          ict_sb_desc: "Time-based entry with FVG (10AM, 4PM, 9PM)",
+          ict_judas: "Judas Swing: False move at session open",
+          desc_risk: "Position sizing, R:R",
+          desc_pro: "SMC, ICT, Sessions",
+          section_indicators_title: "Institutional Technical Analysis Framework",
+          section_methods_title: "Trading Methods",
+          section_patterns_title: "Important Candlestick Patterns",
+          section_risk_title: "Risk Management & Psychology",
+          section_pro_title: "Advanced Professional Trader Strategies",
+          rsi_level1_title: "Level 1: Retail Trap",
+          rsi_level1_myth: "Myth: 'RSI > 70 = SELL, RSI < 30 = BUY'",
+          rsi_trap_title: "⚠️ THE TRAP:",
+          rsi_trap_content: "In strong momentum, RSI can stay 'embedded' > 70 or < 30 for a long time. Shorting because RSI=71 in strong uptrend = MARGIN CALL!",
+          rsi_trap_tip: "💡 RSI > 70 is not exhaustion - it is velocity acceleration!",
+          rsi_level2_title: "Level 2: Trend Regimes",
+          rsi_range_shift: "Constance Brown's Range Shift:",
+          rsi_bull_market: "📈 Bull Market: RSI 40-90",
+          rsi_bull_support: "40-50 = Support zone → BUY dip",
+          rsi_bear_market: "📉 Bear Market: RSI 10-60",
+          rsi_bear_resistance: "50-60 = Resistance → SELL rally",
+          rsi_hidden_div: "💡 Hidden Divergence: Price LL + RSI HL = Trend continuation!",
+          rsi_level3_title: "Level 3: Quant/Algo",
+          rsi_connors_strategy: "RSI(2) Strategy (Larry Connors):",
+          rsi_connors_rules: "• Price > 200 SMA (trend filter)<br>• Entry: RSI(2) < 5<br>• Exit: Price > 5 SMA",
+          rsi_composite_index: "Composite Index (Constance Brown):",
+          rsi_composite_desc: "→ 'Unbounded' RSI, detects failure swings effectively!",
+        }
+      };
+
+      let currentLang = 'vn';
+
+      function toggleLanguage() {
+        currentLang = currentLang === 'vn' ? 'en' : 'vn';
+        updateLanguage();
+      }
+
+      function updateLanguage() {
+        // Update Switcher UI
+        const text = currentLang === 'vn' ? 'VN' : 'EN';
+
+        // Update ALL language texts by class
+        document.querySelectorAll('.lang-text').forEach(el => el.textContent = text);
+
+        // Update Text Content
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+          const key = el.getAttribute('data-i18n');
+          if (translations[currentLang][key]) {
+            el.textContent = translations[currentLang][key];
+          }
+        });
+      }
+    </script>
+    <!-- Knowledge Menu -->
+    <nav class="p-3">
+      <p class="text-slate-500 text-xs uppercase tracking-wider px-3 mb-2" data-i18n="sidebar_knowledge_menu">Danh mục
+        kiến thức</p>
+
+      <div class="lesson-card bg-slate-50 rounded-lg p-3 mb-1" onclick="showSection('indicators')">
+        <div class="flex items-center gap-2">
+          <span class="text-indigo-600">📊</span>
+          <span class="text-slate-900 text-sm" data-i18n="tab_indicators">Chỉ báo kỹ thuật</span>
+        </div>
+        <p class="text-slate-500 text-xs ml-6" data-i18n="desc_indicators">RSI, MACD, MA, Bollinger</p>
+      </div>
+
+      <div class="lesson-card bg-slate-50 rounded-lg p-3 mb-1" onclick="showSection('methods')">
+        <div class="flex items-center gap-2">
+          <span class="text-blue-400">📈</span>
+          <span class="text-slate-900 text-sm" data-i18n="tab_methods">Phương pháp giao dịch</span>
+        </div>
+        <p class="text-slate-500 text-xs ml-6" data-i18n="desc_methods">Trend, S/R, Breakout</p>
+      </div>
+
+      <div class="lesson-card bg-slate-50 rounded-lg p-3 mb-1" onclick="showSection('patterns')">
+        <div class="flex items-center gap-2">
+          <span class="text-orange-400">🕯️</span>
+          <span class="text-slate-900 text-sm" data-i18n="tab_patterns">Mô hình nến</span>
+        </div>
+        <p class="text-slate-500 text-xs ml-6" data-i18n="desc_patterns">Pin bar, Engulfing, Doji</p>
+      </div>
+
+      <div class="lesson-card bg-slate-50 rounded-lg p-3 mb-1" onclick="showSection('riskmanagement')">
+        <div class="flex items-center gap-2">
+          <span class="text-red-400">🛡️</span>
+          <span class="text-slate-900 text-sm" data-i18n="tab_risk">Quản lý rủi ro</span>
+        </div>
+        <p class="text-slate-500 text-xs ml-6" data-i18n="desc_risk">Position sizing, R:R</p>
+      </div>
+
+      <div class="lesson-card bg-slate-50 rounded-lg p-3 mb-1" onclick="showSection('pro')">
+        <div class="flex items-center gap-2">
+          <span class="text-yellow-500">⚡</span>
+          <span class="text-slate-900 text-sm" data-i18n="tab_pro">Pro Strategies</span>
+        </div>
+        <p class="text-slate-500 text-xs ml-6" data-i18n="desc_pro">SMC, ICT, Sessions</p>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- Header -->
+  <header
+    class="main-content sticky top-0 z-50 backdrop-blur-xl bg-white shadow-sm border border-slate-200/80 border-b border-gray-200/50">
+    <div class="max-w-7xl mx-auto px-6 py-4">
+      <div class="flex items-center justify-between flex-wrap gap-4">
+        <div class="flex items-center gap-4">
+          <!-- Menu Toggle (Mobile) -->
+          <button onclick="toggleSidebar()"
+            class="lg:hidden w-10 h-10 bg-tv-bg rounded-xl flex items-center justify-center hover:bg-white shadow-sm border border-slate-200 transition-all">
+            <svg class="w-6 h-6 text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div
+            class="w-12 h-12 bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 rounded-2xl flex items-center justify-center shadow-xl">
+            <svg class="w-7 h-7 text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-xl font-bold text-slate-900 tracking-tight" data-i18n="app_title">Trading Wiki</h1>
+            <p class="text-slate-500 text-xs" data-i18n="app_desc">Kho kiến thức giao dịch</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Language Switcher -->
+          <button onclick="toggleLanguage()"
+            class="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors flex items-center gap-2 box-border min-w-[80px] justify-center"
+            title="Switch Language">
+            <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span class="lang-text text-sm font-bold text-slate-700">VN</span>
+          </button>
+
+          <div class="hidden lg:flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">
+            <div class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+            <span class="text-indigo-700 font-medium text-xs whitespace-nowrap" data-i18n="market_status">Thị trường: Mở
+              cửa</span>
+          </div>
+
+          <div class="text-right hidden xl:block mr-2">
+            <p class="text-[10px] text-slate-500 whitespace-nowrap" data-i18n="hanoi_time">Giờ Hà Nội (GMT+7)</p>
+            <p class="font-mono font-bold text-slate-700 text-xs" id="current-time">14:30:22</p>
+          </div>
+
+          <select id="symbolSelect"
+            class="bg-tv-bg border border-slate-200 text-slate-900 px-3 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer hover:bg-white shadow-sm transition-all w-32">
+            <option value="BINANCE:BTCUSDT">BTC/USDT</option>
+            <option value="FX:EURUSD">EUR/USD</option>
+            <option value="FX:GBPUSD">GBP/USD</option>
+            <option value="FX:USDJPY">USD/JPY</option>
+            <option value="OANDA:XAUUSD">XAU/USD (Gold)</option>
+            <option value="BINANCE:ETHUSDT">ETH/USDT</option>
+          </select>
+
+          <select id="intervalSelect"
+            class="bg-tv-bg border border-slate-200 text-slate-900 px-3 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer hover:bg-white shadow-sm transition-all w-24">
+            <option value="1">1 phút</option>
+            <option value="5">5 phút</option>
+            <option value="15">15 phút</option>
+            <option value="60">1 giờ</option>
+            <option value="240">4 giờ</option>
+            <option value="D" selected>1 ngày</option>
+            <option value="W">1 tuần</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content px-6 py-8">
+    <div class="max-w-6xl mx-auto">
+      <!-- Main Chart Container -->
+      <section class="mb-8">
+        <div
+          class="w-full rounded-xl overflow-hidden shadow-2xl border border-gray-200/50 bg-white shadow-sm border border-slate-200">
+          <div
+            class="px-4 py-3 border-b border-slate-200/50 flex items-center justify-between bg-gradient-to-r from-tv-bg-secondary to-tv-bg">
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
+                <svg class="w-6 h-6 text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                </svg>
+              </div>
+              <div>
+                <h2 id="chartTitle" class="text-slate-900 font-bold text-lg tracking-tight">BTCUSDT</h2>
+                <p id="chartSubtitle" class="text-slate-500 text-sm">BINANCE • Daily</p>
+              </div>
+            </div>
+            <span
+              class="px-3 py-1.5 bg-tv-green/20 text-tv-green text-xs font-bold rounded-full flex items-center gap-1.5 animate-pulse-slow">
+              <span class="w-2 h-2 bg-tv-green rounded-full"></span>
+              LIVE
+            </span>
+          </div>
+          <div id="tradingview_main" class="w-full bg-tv-bg" style="height: 550px;"></div>
+        </div>
+      </section>
+
+      <!-- Navigation Tabs -->
+      <section class="mb-8">
+        <div class="flex gap-2 flex-wrap">
+          <button onclick="showSection('indicators')" id="tab-indicators"
+            class="tab-btn active px-5 py-2.5 rounded-xl text-sm font-medium bg-purple-600 text-slate-900 transition-all">
+            <span>📊</span> <span data-i18n="tab_indicators">Chỉ báo kỹ thuật</span>
+          </button>
+          <button onclick="showSection('methods')" id="tab-methods"
+            class="tab-btn px-5 py-2.5 rounded-xl text-sm font-medium bg-white shadow-sm border border-slate-200 text-slate-600 hover:bg-tv-bg transition-all">
+            <span>📈</span> <span data-i18n="tab_methods">Phương pháp giao dịch</span>
+          </button>
+          <button onclick="showSection('patterns')" id="tab-patterns"
+            class="tab-btn px-5 py-2.5 rounded-xl text-sm font-medium bg-white shadow-sm border border-slate-200 text-slate-600 hover:bg-tv-bg transition-all">
+            <span>🕯️</span> <span data-i18n="tab_patterns">Mô hình nến</span>
+          </button>
+          <button onclick="showSection('riskmanagement')" id="tab-riskmanagement"
+            class="tab-btn px-5 py-2.5 rounded-xl text-sm font-medium bg-white shadow-sm border border-slate-200 text-slate-600 hover:bg-tv-bg transition-all">
+            <span>🛡️</span> <span data-i18n="tab_risk">Quản lý rủi ro</span>
+          </button>
+          <button onclick="showSection('pro')" id="tab-pro"
+            class="tab-btn px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-yellow-600 to-orange-600 text-slate-900 hover:from-yellow-500 hover:to-orange-500 transition-all flex items-center gap-1">
+            <span>⚡</span> <span data-i18n="tab_pro">Pro Strategies</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- SECTION: Technical Indicators - Institutional Framework -->
+      <section id="section-indicators" class="education-section mb-10">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="w-10 h-10 bg-purple-600/20 rounded-xl flex items-center justify-center">📊</span>
+          <span data-i18n="section_indicators_title">Institutional Technical Analysis Framework</span>
+        </h2>
+
+        <!-- RSI Section -->
+        <div class="bg-gradient-to-br from-purple-50 to-white rounded-3xl p-8 border border-purple-100 mb-10 shadow-sm">
+          <div class="flex items-center gap-4 mb-6">
+            <div
+              class="w-16 h-16 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-purple-200">
+              📉</div>
+            <div>
+              <h3 class="text-slate-900 font-bold text-2xl" data-i18n="rsi_title">RSI - The Momentum Master</h3>
+              <span class="text-indigo-600 font-medium" data-i18n="rsi_subtitle">J. Welles Wilder (1978) • Relative
+                Strength Index</span>
+            </div>
+          </div>
+
+          <!-- RSI Formula -->
+          <div class="bg-slate-50 rounded-2xl p-6 mb-8 border border-slate-200">
+            <p class="text-slate-900 font-bold mb-3 flex items-center gap-2">
+              <span>📐</span> <span data-i18n="rsi_formula_label">Mathematical Formula (Wilder's Smoothing)</span>
+            </p>
+            <div class="flex flex-col md:flex-row gap-6 items-center">
+              <code class="bg-white border border-slate-200 rounded-xl p-4 text-purple-600 font-mono text-sm shadow-sm">
+                RSI = 100 - (100 / (1 + RS))
+              </code>
+              <p class="text-slate-600 leading-relaxed text-sm" data-i18n="rsi_formula_note">
+                ⚠️ Lưu ý quan trọng: Wilder sử dụng công thức làm mượt (Smoothing) riêng biệt, khác với Simple Moving
+                Average (SMA). Nhiều nền tảng retail dùng SMA để tính RSI, dẫn đến tín hiệu bị sai lệch so với bản gốc!
+              </p>
+            </div>
+          </div>
+
+          <!-- 3 Levels Detailed Grid -->
+          <div class="space-y-8">
+            <!-- Level 1 -->
+            <div class="bg-white rounded-2xl p-6 md:p-8 border border-red-100 shadow-sm relative overflow-hidden">
+              <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-red-500 -mr-8 -mt-8">1</div>
+              <h4 class="text-red-500 font-bold text-xl mb-4 flex items-center gap-2 relative z-10">
+                <span class="bg-red-100 p-2 rounded-lg">🚫</span> <span data-i18n="rsi_level1_title">Level 1: The Retail
+                  Trap</span>
+              </h4>
+
+              <div class="prose prose-slate max-w-none text-slate-600 text-base leading-relaxed relative z-10">
+                <p class="mb-4" data-i18n="rsi_level1_p1">Rất nhiều trader mới mắc sai lầm nghiêm trọng khi tin rằng RSI
+                  > 70 là "Quá mua" và nên Bán ngay lập tức. Đây là một tư duy nguy hiểm.</p>
+                <p class="mb-6" data-i18n="rsi_level1_p2">Trong một xu hướng tăng mạnh, RSI có thể duy trì trên vùng 70
+                  trong nhiều ngày. Việc bán khống chỉ vì RSI > 70 giống như việc đứng chặn trước một đoàn tàu cao tốc.
+                </p>
+
+                <div class="bg-red-50 border-l-4 border-red-500 p-5 rounded-r-xl">
+                  <p class="font-bold text-red-700 mb-1 flex items-center gap-2">
+                    <span>⚠️</span> <span data-i18n="rsi_trap_title">CẢNH BÁO:</span>
+                  </p>
+                  <p class="text-red-700/80 text-sm" data-i18n="rsi_trap_desc">Bán đỉnh khi RSI > 70 trong Uptrend mạnh
+                    là nguyên nhân số 1 khiến tài khoản bốc hơi. Nó thể hiện SỨC MẠNH, không phải sự kiệt sức.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Level 2 -->
+            <div class="bg-white rounded-2xl p-6 md:p-8 border border-blue-100 shadow-sm relative overflow-hidden">
+              <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-blue-500 -mr-8 -mt-8">2</div>
+              <h4 class="text-blue-600 font-bold text-xl mb-4 flex items-center gap-2 relative z-10">
+                <span class="bg-blue-100 p-2 rounded-lg">⚖️</span> <span data-i18n="rsi_level2_title">Level 2: Trend
+                  Regimes</span>
+              </h4>
+
+              <div class="prose prose-slate max-w-none text-slate-600 text-base leading-relaxed relative z-10">
+                <p class="mb-6" data-i18n="rsi_level2_p1">Trader chuyên nghiệp quan sát sự "dịch chuyển vùng dao động"
+                  (Range Shift) để xác định xu hướng thật sự:</p>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                  <div class="bg-green-50 rounded-xl p-5 border border-green-100">
+                    <p class="font-bold text-green-700 mb-2" data-i18n="rsi_bull_title">📈 Bull Market (Thị trường Bò)
+                    </p>
+                    <p class="text-slate-600 text-sm" data-i18n="rsi_bull_desc">RSI dao động 40-90. Vùng 40-50 là Hỗ Trợ
+                      cứng -> Canh MUA tại đây.</p>
+                  </div>
+                  <div class="bg-red-50 rounded-xl p-5 border border-red-100">
+                    <p class="font-bold text-red-700 mb-2" data-i18n="rsi_bear_title">📉 Bear Market (Thị trường Gấu)
+                    </p>
+                    <p class="text-slate-600 text-sm" data-i18n="rsi_bear_desc">RSI dao động 10-60. Vùng 50-60 là Kháng
+                      Cự cứng -> Canh BÁN tại đây.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Level 3 -->
+            <div class="bg-white rounded-2xl p-6 md:p-8 border border-orange-100 shadow-sm relative overflow-hidden">
+              <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-orange-500 -mr-8 -mt-8">3</div>
+              <h4 class="text-orange-500 font-bold text-xl mb-4 flex items-center gap-2 relative z-10">
+                <span class="bg-orange-100 p-2 rounded-lg">🤖</span> <span data-i18n="rsi_level3_title">Level 3: Quant &
+                  Algorithms</span>
+              </h4>
+
+              <div class="prose prose-slate max-w-none text-slate-600 text-base leading-relaxed relative z-10">
+                <p class="mb-6" data-i18n="rsi_level3_p1">Cách các quỹ đầu tư (Hedge Funds) sử dụng RSI để tìm điểm đảo
+                  chiều chính xác:</p>
+
+                <ul class="space-y-4">
+                  <li class="flex items-start gap-4">
+                    <span class="text-2xl mt-1">🌩️</span>
+                    <div>
+                      <strong class="text-slate-900 block mb-1" data-i18n="rsi_connors_title">RSI(2) Strategy:</strong>
+                      <span class="text-slate-600 text-sm" data-i18n="rsi_connors_desc">Mua khi Giá > SMA200 VÀ RSI(2) <
+                          5. Bán ngay khi Giá hồi về SMA5. (Chiến lược bắt dao rơi xác suất cao).</span>
+                    </div>
+                  </li>
+                  <li class="flex items-start gap-4">
+                    <span class="text-2xl mt-1">🧠</span>
+                    <div>
+                      <strong class="text-slate-900 block mb-1" data-i18n="rsi_composite_title">Composite
+                        Index:</strong>
+                      <span class="text-slate-600 text-sm" data-i18n="rsi_composite_desc">RSI đã được chuẩn hóa để loại
+                        bỏ độ trễ. Dùng để phát hiện Phân kỳ ẩn (Hidden Divergence) mà RSI thường không thấy.</span>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bollinger Bands Section -->
+        <div class="bg-gradient-to-br from-teal-50 to-white rounded-3xl p-8 border border-teal-100 mb-10 shadow-sm">
+          <div class="flex items-center gap-4 mb-6">
+            <div
+              class="w-16 h-16 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-teal-200">
+              📊</div>
+            <div>
+              <h3 class="text-slate-900 font-bold text-2xl" data-i18n="bb_title">Bollinger Bands - The Volatility Engine
+              </h3>
+              <span class="text-teal-600 font-medium" data-i18n="bb_subtitle">John Bollinger • Standard Deviation
+                Envelopes</span>
+            </div>
+          </div>
+
+          <!-- 3 Levels Detailed Grid -->
+          <div class="space-y-8">
+            <!-- Level 1 -->
+            <div class="bg-white rounded-2xl p-6 md:p-8 border border-red-100 shadow-sm relative overflow-hidden">
+              <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-red-500 -mr-8 -mt-8">1</div>
+              <h4 class="text-red-500 font-bold text-xl mb-4 flex items-center gap-2 relative z-10">
+                <span class="bg-red-100 p-2 rounded-lg">🚫</span> <span data-i18n="bb_level1_title">Level 1: Cạm bẫy Phổ
+                  biến</span>
+              </h4>
+
+              <div class="prose prose-slate max-w-none text-slate-600 text-base leading-relaxed relative z-10">
+                <p class="mb-4" data-i18n="bb_level1_p1">Sai lầm kinh điển: "Mua ở dải dưới, Bán ở dải trên". Tư duy
+                  đánh đảo chiều (Mean Reversion) này cực kỳ rủi ro khi thị trường bắt đầu vào pha biến động mạnh.</p>
+
+                <div class="bg-red-50 border-l-4 border-red-500 p-5 rounded-r-xl">
+                  <p class="font-bold text-red-700 mb-1 flex items-center gap-2">
+                    <span>⚠️</span> <span data-i18n="bb_walk_title">Hiện tượng "Walking the Bands":</span>
+                  </p>
+                  <p class="text-red-700/80 text-sm" data-i18n="bb_walk_desc">Khi volatility breakout xảy ra, giá sẽ
+                    đóng cửa NGOÀI dải Bollinger và liên tục "bám" dải đi lên. Trader đánh đảo chiều ở đây sẽ bị "nghiền
+                    nát" khi giá chạy tiếp 3-4 nhịp nữa.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Level 2 -->
+            <div class="bg-white rounded-2xl p-6 md:p-8 border border-blue-100 shadow-sm relative overflow-hidden">
+              <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-blue-500 -mr-8 -mt-8">2</div>
+              <h4 class="text-blue-600 font-bold text-xl mb-4 flex items-center gap-2 relative z-10">
+                <span class="bg-blue-100 p-2 rounded-lg">💥</span> <span data-i18n="bb_level2_title">Level 2: The
+                  Squeeze</span>
+              </h4>
+              <div class="prose prose-slate max-w-none text-slate-600 text-base leading-relaxed relative z-10">
+                <p class="mb-4" data-i18n="bb_level2_p1">Đây là setup mạnh nhất của hệ thống này. Khi hai dải Bollinger
+                  co thắt lại cực hẹp (BandWidth thấp nhất 6 tháng), nó báo hiệu thị trường đang tích lũy năng lượng cho
+                  một cú nổ lớn.</p>
+
+                <div class="flex items-start gap-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
+                  <span class="text-2xl mt-1">🎭</span>
+                  <div>
+                    <strong class="text-slate-900 block mb-1" data-i18n="bb_fake_title">Head Fake (Cú lừa):</strong>
+                    <span class="text-slate-600 text-sm" data-i18n="bb_fake_desc">Thường cú breakout đầu tiên sau
+                      Squeeze là giả. Giá thọc lên dải trên (dụ Long) rồi đảo chiều sập mạnh. Action: Đừng đoán! Chờ cú
+                      fake xảy ra rồi trade theo hướng ngược lại.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Level 3 -->
+            <div class="bg-white rounded-2xl p-6 md:p-8 border border-green-100 shadow-sm relative overflow-hidden">
+              <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-green-500 -mr-8 -mt-8">3</div>
+              <h4 class="text-green-600 font-bold text-xl mb-4 flex items-center gap-2 relative z-10">
+                <span class="bg-green-100 p-2 rounded-lg">🚀</span> <span data-i18n="bb_level3_title">Level 3:
+                  Volatility Breakout</span>
+              </h4>
+              <div class="prose prose-slate max-w-none text-slate-600 text-base leading-relaxed relative z-10">
+                <p class="mb-6" data-i18n="bb_level3_p1">Hệ thống giao dịch thuần túy dựa trên biến động, giúp bắt được
+                  những con sóng lớn nhất (Home Run):</p>
+
+                <div class="bg-tv-bg rounded-xl p-5 border border-slate-200">
+                  <p class="font-bold text-slate-900 mb-3 border-b border-slate-200 pb-2" data-i18n="bb_vol_layout">📝
+                    Setup Volatility Break:</p>
+                  <ul class="space-y-3">
+                    <li class="flex items-center gap-3">
+                      <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span class="text-slate-700" data-i18n="bb_vol_step1">1. Điều kiện: BandWidth mở rộng + Vol >
+                        150%.</span>
+                    </li>
+                    <li class="flex items-center gap-3">
+                      <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span class="text-slate-700" data-i18n="bb_vol_step2">2. Tín hiệu: Nến đóng cửa BÊN NGOÀI
+                        dải.</span>
+                    </li>
+                    <li class="flex items-center gap-3">
+                      <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span class="text-slate-700" data-i18n="bb_vol_step3">3. Action: Buy Stop trên đỉnh nến
+                        Breakout.</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- VWAP & Choppiness Section - Simplified -->
+        <div class="grid md:grid-cols-2 gap-6 mb-6">
+          <!-- VWAP -->
+          <div
+            class="bg-gradient-to-br from-indigo-900 to-blue-900 rounded-2xl p-6 border border-indigo-500/30 text-white shadow-lg">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center text-2xl backdrop-blur-sm">
+                ⚖️</div>
+              <div>
+                <h3 class="font-bold text-lg" data-i18n="vwap_title">VWAP (Giá Bình Quân)</h3>
+                <span class="text-indigo-200 text-sm" data-i18n="vwap_subtitle">Đường 'Giá Trị Thực' của thị
+                  trường</span>
+              </div>
+            </div>
+
+            <div class="bg-white/10 rounded-xl p-4 mb-4 backdrop-blur-sm border border-white/10">
+              <p class="text-indigo-100 text-sm mb-2" data-i18n="vwap_analogy">💡 <strong>Tư duy đơn giản:</strong></p>
+              <p class="text-sm leading-relaxed text-indigo-50">
+                Hãy coi VWAP là "Giá Gốc" của món hàng.
+                <br>• Giá nằm trên VWAP = Đắt (Phe Mua đang kiểm soát).
+                <br>• Giá nằm dưới VWAP = Rẻ (Phe Bán đang kiểm soát).
+                <br>• Các quỹ lớn (Cá Mập) thường chỉ MUA khi giá về gần VWAP (Giá gốc).
+              </p>
+            </div>
+
+            <div class="space-y-3 text-sm">
+              <div class="bg-indigo-500/20 rounded-lg p-3 border border-indigo-500/30">
+                <p class="text-indigo-300 font-medium mb-1" data-i18n="vwap_usage_title">Chiến thuật Tổ chức:</p>
+                <ul class="text-indigo-100 text-xs space-y-1">
+                  <li>• <strong>Fair Value:</strong> Mua tại đường VWAP (Giá đẹp nhất).</li>
+                  <li>• <strong>Trend Day:</strong> Nếu giá cứ bám trên đường VWAP cả ngày -> Xu hướng Tăng cực mạnh
+                    (Đừng bán ngược!).</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Choppiness Index -->
+          <div
+            class="bg-gradient-to-br from-orange-900 to-amber-900 rounded-2xl p-6 border border-orange-500/30 text-white shadow-lg">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center text-2xl backdrop-blur-sm">
+                🌊</div>
+              <div>
+                <h3 class="font-bold text-lg" data-i18n="chop_title">Choppiness (Độ Nhiễu)</h3>
+                <span class="text-orange-200 text-sm" data-i18n="chop_subtitle">Bộ lọc: Biển Động vs Biển Lặng</span>
+              </div>
+            </div>
+
+            <div class="bg-white/10 rounded-xl p-4 mb-4 backdrop-blur-sm border border-white/10">
+              <p class="text-orange-100 text-sm mb-2" data-i18n="chop_analogy">💡 <strong>Tư duy đơn giản:</strong></p>
+              <p class="text-sm leading-relaxed text-orange-50">
+                CHOP đo xem thị trường đang "Đi ngang" (Nhiễu) hay "Có xu hướng" (Rõ ràng).
+                <br>• CHOP cao (>61.8) = Biển động, sóng đánh loạn xạ -> <strong>Đứng ngoài!</strong>
+                <br>• CHOP thấp (<38.2)=Sóng lớn, đi một chiều -> <strong>Vào lệnh!</strong>
+              </p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-sm">
+              <div class="bg-white/10 rounded-lg p-3 text-center border border-white/5">
+                <p class="text-green-400 font-bold text-lg">
+                  < 38.2</p>
+                    <p class="text-gray-300 text-xs mt-1">CÓ TREND</p>
+                    <p class="text-green-300 text-[10px]">(Dùng MA, Breakout)</p>
+              </div>
+              <div class="bg-white/10 rounded-lg p-3 text-center border border-white/5">
+                <p class="text-red-400 font-bold text-lg">> 61.8</p>
+                <p class="text-gray-300 text-xs mt-1">SIDEWAY (Nhiễu)</p>
+                <p class="text-red-300 text-[10px]">(Dùng RSI, BB)</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actionable Setups Summary - Simplified Checklist -->
+        <div
+          class="bg-gradient-to-r from-yellow-50 to-amber-50 rounded-2xl p-6 border border-yellow-200 shadow-sm relative overflow-hidden">
+          <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-yellow-100 rounded-full opacity-50 blur-xl"></div>
+
+          <h3 class="text-slate-900 font-bold text-lg mb-4 flex items-center gap-2 relative z-10">
+            <span class="bg-yellow-200 p-1.5 rounded-lg text-xl">🎯</span>
+            <span data-i18n="actionable_title">Chiến lược Thực chiến: "Bắt Đáy An Toàn"</span>
+          </h3>
+
+          <div class="grid md:grid-cols-2 gap-8 relative z-10">
+            <div>
+              <p class="text-slate-600 text-sm mb-3 italic">Kết hợp RSI + Bollinger Bands để tìm điểm vào lệnh xác suất
+                thắng cao:</p>
+              <ul class="space-y-3">
+                <li class="flex items-start gap-3">
+                  <div
+                    class="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                    1</div>
+                  <div>
+                    <strong class="text-slate-900 block text-sm">Xu hướng Tăng:</strong>
+                    <span class="text-slate-600 text-sm">Giá phải nằm trên đường 200 SMA. (Chỉ đánh lên).</span>
+                  </div>
+                </li>
+                <li class="flex items-start gap-3">
+                  <div
+                    class="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                    2</div>
+                  <div>
+                    <strong class="text-slate-900 block text-sm">RSI "nghỉ mệt":</strong>
+                    <span class="text-slate-600 text-sm">RSI rớt về vùng 40-50 (đây là vùng hỗ trợ trong
+                      uptrend).</span>
+                  </div>
+                </li>
+                <li class="flex items-start gap-3">
+                  <div
+                    class="w-6 h-6 rounded-full bg-tv-green text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                    3</div>
+                  <div>
+                    <strong class="text-slate-900 block text-sm">Vào lệnh (Entry):</strong>
+                    <span class="text-slate-600 text-sm">Mua khi có nến xanh đảo chiều (Pinbar/Engulfing).</span>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <div class="flex flex-col gap-3 justify-center bg-white/60 p-4 rounded-xl border border-yellow-100">
+              <div class="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100">
+                <span class="text-red-700 font-bold text-sm">🛑 Stop Loss (Cắt lỗ)</span>
+                <span class="text-red-600 text-sm">Dưới đáy nến vừa tạo</span>
+              </div>
+              <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-100">
+                <span class="text-green-700 font-bold text-sm">🎯 Take Profit (Chốt lời)</span>
+                <span class="text-green-600 text-sm">Khi giá chạm dải BB trên</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION: Trading Methods -->
+      <section id="section-methods" class="education-section mb-10 hidden">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="w-10 h-10 bg-blue-600/20 rounded-xl flex items-center justify-center">📈</span>
+          <span data-i18n="section_methods_title">Phương pháp giao dịch</span>
+        </h2>
+
+        <!-- Trend Following -->
+        <div
+          class="bg-gradient-to-br from-blue-50 to-white rounded-3xl p-8 border border-blue-100 shadow-sm relative overflow-hidden">
+          <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-blue-500 -mr-8 -mt-8">1</div>
+          <div class="flex items-center gap-4 mb-6 relative z-10">
+            <div
+              class="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-blue-200">
+              🚀</div>
+            <div>
+              <h3 class="text-slate-900 font-bold text-2xl" data-i18n="method_trend_title">1. Trend Following</h3>
+              <p class="text-slate-600 font-medium" data-i18n="method_trend_desc">Phương pháp an toàn và phổ biến
+                nhất...</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-6 relative z-10">
+            <!-- Step 1 -->
+            <div class="bg-white rounded-2xl p-6 border border-blue-100 shadow-sm hover:border-blue-300 transition-all">
+              <div
+                class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold mb-4">
+                1</div>
+              <h4 class="text-slate-900 font-bold text-lg mb-2" data-i18n="method_trend_step1_title">Xác định Xu hướng
+              </h4>
+              <p class="text-slate-600 text-base leading-relaxed" data-i18n="method_trend_step1_desc">Quan sát khung
+                Daily/H4. Giá nằm TRÊN đường EMA 200 là Uptrend.</p>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="bg-white rounded-2xl p-6 border border-blue-100 shadow-sm hover:border-blue-300 transition-all">
+              <div
+                class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold mb-4">
+                2</div>
+              <h4 class="text-slate-900 font-bold text-lg mb-2" data-i18n="method_trend_step2_title">Chờ Sóng Hồi</h4>
+              <p class="text-slate-600 text-base leading-relaxed" data-i18n="method_trend_step2_desc">Không bao giờ đu
+                lệnh khi giá chạy mạnh. Chờ hồi về EMA 20/50.</p>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="bg-white rounded-2xl p-6 border border-blue-100 shadow-sm hover:border-blue-300 transition-all">
+              <div
+                class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold mb-4">
+                3</div>
+              <h4 class="text-slate-900 font-bold text-lg mb-2" data-i18n="method_trend_step3_title">Tín hiệu Vào lệnh
+              </h4>
+              <p class="text-slate-600 text-base leading-relaxed" data-i18n="method_trend_step3_desc">Chờ nến xác nhận
+                (Pinbar) tại vùng hồi. Đây là cò súng.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Support & Resistance -->
+        <div
+          class="bg-gradient-to-br from-indigo-50 to-white rounded-3xl p-8 border border-indigo-100 shadow-sm relative overflow-hidden">
+          <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-indigo-500 -mr-8 -mt-8">2</div>
+          <div class="flex items-center gap-4 mb-6 relative z-10">
+            <div
+              class="w-16 h-16 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-indigo-200">
+              🎯</div>
+            <div>
+              <h3 class="text-slate-900 font-bold text-2xl" data-i18n="method_sr_title">2. Support & Resistance</h3>
+              <p class="text-slate-600 font-medium" data-i18n="method_sr_desc">Giao dịch tại các vùng cản tâm lý...</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8 relative z-10">
+            <div class="bg-white rounded-2xl p-6 border border-indigo-100 shadow-sm">
+              <h4 class="text-indigo-600 font-bold text-lg mb-3" data-i18n="method_sr_concept_title">Nguyên lý Đảo
+                chiều:</h4>
+              <p class="text-slate-600 text-base leading-relaxed" data-i18n="method_sr_concept_desc">Giá có xu hướng tôn
+                trọng các vùng cản cũ. Vùng càng được test nhiều lần thì càng cứng.</p>
+
+              <div class="mt-4 bg-indigo-50 p-4 rounded-xl">
+                <p class="font-bold text-indigo-800 mb-2">💎 Bounce Strategy Process:</p>
+                <ul class="space-y-2 text-slate-700">
+                  <li data-i18n="method_sr_bounce_step1">1. Giá tiếp cận vùng Cản</li>
+                  <li data-i18n="method_sr_bounce_step2">2. Quan sát phản ứng (Reaction)</li>
+                  <li data-i18n="method_sr_bounce_step3">3. Vào lệnh khi có Rejection Candle</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-2xl p-6 border border-indigo-100 shadow-sm flex items-center justify-center">
+              <!-- Visual Placeholder for S/R Drawing -->
+              <div class="text-center">
+                <div class="text-6xl mb-4">📉___📈</div>
+                <p class="text-slate-500 italic">"Sell at Resistance, Buy at Support"</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Breakout Trading -->
+        <div
+          class="bg-gradient-to-br from-orange-50 to-white rounded-3xl p-8 border border-orange-100 shadow-sm relative overflow-hidden">
+          <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-orange-500 -mr-8 -mt-8">3</div>
+          <div class="flex items-center gap-4 mb-6 relative z-10">
+            <div
+              class="w-16 h-16 bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-orange-200">
+              💥</div>
+            <div>
+              <h3 class="text-slate-900 font-bold text-2xl" data-i18n="method_break_title">3. Breakout Trading</h3>
+              <p class="text-slate-600 font-medium" data-i18n="method_break_desc">Bắt trọn con sóng lớn ngay khi nó bắt
+                đầu...</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-6 relative z-10 mb-6">
+            <!-- Real Breakout -->
+            <div class="bg-green-50 rounded-2xl p-6 border border-green-100">
+              <h4 class="text-green-700 font-bold text-lg mb-2 flex items-center gap-2">✅ <span
+                  data-i18n="method_break_real_title">Breakout Thật</span></h4>
+              <p class="text-slate-700 text-base leading-relaxed" data-i18n="method_break_real_desc">Nến thân dài, đóng
+                cửa dứt khoát qua vùng cản. Volume tăng đột biến.</p>
+            </div>
+
+            <!-- Fake Breakout -->
+            <div class="bg-red-50 rounded-2xl p-6 border border-red-100">
+              <h4 class="text-red-700 font-bold text-lg mb-2 flex items-center gap-2">❌ <span
+                  data-i18n="method_break_fake_title">Breakout Giả</span></h4>
+              <p class="text-slate-700 text-base leading-relaxed" data-i18n="method_break_fake_desc">Giá thọc qua cản
+                nhưng rút chân lại (bóng nến dài). Volume thấp. Bẫy!</p>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-2xl p-6 border border-orange-200 shadow-sm relative z-10">
+            <h4 class="text-orange-600 font-bold text-lg mb-2 flex items-center gap-2">🛡️ <span
+                data-i18n="method_break_retest_title">Chiến lược Retest an toàn:</span></h4>
+            <p class="text-slate-600 text-base leading-relaxed" data-i18n="method_break_retest_desc">Thay vì mua đuổi
+              ngay khi Breakout... hãy chờ giá quay lại kiểm tra.</p>
+          </div>
+        </div>
+
+        <!-- Price Action Trading -->
+        <div
+          class="bg-gradient-to-br from-purple-50 to-white rounded-3xl p-8 border border-purple-100 shadow-sm relative overflow-hidden">
+          <div class="absolute top-0 right-0 p-4 opacity-10 font-black text-9xl text-purple-500 -mr-8 -mt-8">4</div>
+          <div class="flex items-center gap-4 mb-6 relative z-10">
+            <div
+              class="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-purple-200">
+              🕯️</div>
+            <div>
+              <h3 class="text-slate-900 font-bold text-2xl" data-i18n="method_pa_title">4. Price Action Trading</h3>
+              <p class="text-slate-600 font-medium" data-i18n="method_pa_sub">Giao dịch thuần túy - "Chart tells
+                everything"</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-8 relative z-10">
+            <!-- Core Concepts -->
+            <div class="space-y-6">
+              <div class="bg-white rounded-2xl p-6 border border-purple-100 shadow-sm">
+                <h4 class="text-purple-700 font-bold text-lg mb-3" data-i18n="method_pa_principle_title">Nguyên tắc Cốt
+                  lõi:</h4>
+                <p class="text-slate-600 text-base leading-relaxed" data-i18n="method_pa_principle_desc">Chỉ dùng biểu
+                  đồ nến, loại bỏ tất cả indicators gây nhiễu. Giá là chỉ báo duy nhất không có độ trễ (Leading
+                  Indicator).</p>
+              </div>
+
+              <div class="bg-purple-50 rounded-2xl p-6 border border-purple-100">
+                <h4 class="text-purple-700 font-bold text-lg mb-3" data-i18n="method_pa_structure_title">📊 Swing
+                  Structure (Cấu trúc sóng):</h4>
+                <ul class="space-y-3">
+                  <li class="flex items-center gap-3">
+                    <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                    <span class="text-slate-700 text-base"><strong>Uptrend:</strong> Higher High (HH) + Higher Low
+                      (HL)</span>
+                  </li>
+                  <li class="flex items-center gap-3">
+                    <span class="w-2 h-2 bg-red-500 rounded-full"></span>
+                    <span class="text-slate-700 text-base"><strong>Downtrend:</strong> Lower High (LH) + Lower Low
+                      (LL)</span>
+                  </li>
+                  <li class="flex items-center gap-3">
+                    <span class="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                    <span class="text-slate-700 text-base"><strong>Reversal:</strong> Khi cấu trúc này bị phá vỡ (Break
+                      of Structure).</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Key Levels & Entry -->
+            <div class="space-y-6">
+              <div class="bg-pink-50 rounded-2xl p-6 border border-pink-100">
+                <h4 class="text-pink-700 font-bold text-lg mb-3" data-i18n="method_pa_key_title">🎯 Key Levels quan
+                  trọng:</h4>
+                <ul class="grid grid-cols-1 gap-2">
+                  <li class="bg-white p-2 rounded-lg text-slate-700 border border-pink-100 shadow-sm text-sm">• Swing
+                    High / Swing Low (Đỉnh/Đáy cũ)</li>
+                  <li class="bg-white p-2 rounded-lg text-slate-700 border border-pink-100 shadow-sm text-sm">• Equal
+                    Highs / Equal Lows (Vùng thanh khoản)</li>
+                  <li class="bg-white p-2 rounded-lg text-slate-700 border border-pink-100 shadow-sm text-sm">• Previous
+                    Day High/Low (Đỉnh/Đáy ngày hôm qua)</li>
+                </ul>
+              </div>
+
+              <div class="bg-white rounded-2xl p-6 border border-purple-200 shadow-sm">
+                <h4 class="text-purple-700 font-bold text-lg mb-3" data-i18n="method_pa_entry_title">🔥 Quy trình vào
+                  lệnh:</h4>
+                <ol class="space-y-2 text-slate-600 text-sm">
+                  <li class="flex gap-2"><span class="font-bold text-purple-500">1.</span> Xác định Trend (D/H4)</li>
+                  <li class="flex gap-2"><span class="font-bold text-purple-500">2.</span> Đánh dấu Key Level</li>
+                  <li class="flex gap-2"><span class="font-bold text-purple-500">3.</span> Chờ giá tiếp cận & Phản ứng
+                  </li>
+                  <li class="flex gap-2"><span class="font-bold text-purple-500">4.</span> Entry khi có mô hình nến đảo
+                    chiều</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+    </div>
+
+    <!-- Trading Styles Comparison -->
+    <div class="mt-12 mb-12">
+      <h3 class="text-slate-900 font-bold text-2xl mb-6 flex items-center gap-3">
+        <span class="text-3xl">⏱️</span> <span data-i18n="styles_title">So sánh Phong cách Giao dịch</span>
+      </h3>
+
+      <div class="grid md:grid-cols-4 gap-6">
+        <!-- Scalping -->
+        <div class="bg-white rounded-2xl p-6 border-t-4 border-pink-500 shadow-sm hover:shadow-md transition-all">
+          <h4 class="text-pink-600 font-bold text-xl mb-4 text-center">⚡ Scalping</h4>
+          <div class="space-y-4 text-base">
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Timeframe</span>
+              <span class="text-slate-900 font-medium">1m - 5m</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Hold Time</span>
+              <span class="text-slate-900 font-medium font-sm">Giây - Phút</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Target</span>
+              <span class="text-slate-900 font-medium">5-15 pips</span>
+            </div>
+            <div class="bg-pink-50 p-3 rounded-xl text-center">
+              <p class="text-pink-700 text-sm font-medium">⚠️ High Stress, High Focus</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Day Trading -->
+        <div class="bg-white rounded-2xl p-6 border-t-4 border-blue-500 shadow-sm hover:shadow-md transition-all">
+          <h4 class="text-blue-600 font-bold text-xl mb-4 text-center">📅 Day Trading</h4>
+          <div class="space-y-4 text-base">
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Timeframe</span>
+              <span class="text-slate-900 font-medium">5m - 1H</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Hold Time</span>
+              <span class="text-slate-900 font-medium">Trong ngày</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Target</span>
+              <span class="text-slate-900 font-medium">20-50 pips</span>
+            </div>
+            <div class="bg-blue-50 p-3 rounded-xl text-center">
+              <p class="text-blue-700 text-sm font-medium">✅ Phổ biến nhất</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Swing Trading -->
+        <div
+          class="bg-white rounded-2xl p-6 border-t-4 border-green-500 shadow-sm hover:shadow-md transition-all transform md:-translate-y-4 border-slate-200">
+          <div
+            class="uppercase tracking-wide text-xs font-bold text-green-600 mb-2 text-center bg-green-100 rounded-full py-1">
+            Recommended</div>
+          <h4 class="text-green-600 font-bold text-xl mb-4 text-center">📈 Swing</h4>
+          <div class="space-y-4 text-base">
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Timeframe</span>
+              <span class="text-slate-900 font-medium">4H - Daily</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Hold Time</span>
+              <span class="text-slate-900 font-medium">Vài ngày</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Target</span>
+              <span class="text-slate-900 font-medium">100+ pips</span>
+            </div>
+            <div class="bg-green-50 p-3 rounded-xl text-center">
+              <p class="text-green-700 text-sm font-medium">🏖️ Low Stress (Cho người đi làm)</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Position -->
+        <div class="bg-white rounded-2xl p-6 border-t-4 border-purple-500 shadow-sm hover:shadow-md transition-all">
+          <h4 class="text-purple-600 font-bold text-xl mb-4 text-center">🏔️ Position</h4>
+          <div class="space-y-4 text-base">
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Timeframe</span>
+              <span class="text-slate-900 font-medium">Daily/Weekly</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Hold Time</span>
+              <span class="text-slate-900 font-medium">Tuần/Tháng</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-100 pb-2">
+              <span class="text-slate-500 text-sm">Target</span>
+              <span class="text-slate-900 font-medium">500+ pips</span>
+            </div>
+            <div class="bg-purple-50 p-3 rounded-xl text-center">
+              <p class="text-purple-700 text-sm font-medium">💰 Cần vốn lớn</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </section>
+
+    <!-- SECTION: Candlestick Patterns -->
+    <section id="section-patterns" class="education-section mb-20 hidden">
+      <div class="text-center mb-12">
+        <span
+          class="bg-orange-100 text-orange-600 px-4 py-1.5 rounded-full text-sm font-bold tracking-wide uppercase mb-4 inline-block">Price
+          Action Mastery</span>
+        <h2 class="text-3xl md:text-4xl font-bold text-slate-900 mb-4" data-i18n="section_patterns_title">Important
+          Candlestick Patterns</h2>
+        <p class="text-slate-600 max-w-2xl mx-auto text-lg">Những mẫu hình nến quyền lực nhất giúp bạn đọc vị tâm lý thị
+          trường.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+        <!-- Pin Bar Card -->
+        <div
+          class="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg shadow-slate-200/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
+          <div
+            class="absolute top-0 right-0 w-32 h-32 bg-orange-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110">
+          </div>
+          <div class="relative z-10">
+            <div
+              class="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center text-3xl mb-6 text-orange-600 shadow-sm">
+              📍</div>
+
+            <div class="flex flex-col gap-1 mb-4">
+              <h3 class="text-2xl font-bold text-slate-900" data-i18n="pattern_pinbar_title">Pin Bar</h3>
+              <span
+                class="text-orange-500 font-medium text-sm bg-orange-50 self-start px-3 py-1 rounded-lg border border-orange-100"
+                data-i18n="pattern_pinbar_sub">Rejection Signal</span>
+            </div>
+
+            <p class="text-slate-600 text-base leading-relaxed mb-6" data-i18n="pattern_pinbar_desc">Bóng nến dài gấp
+              2-3 lần thân. Đuôi nến chọc vào vùng cản và bị đẩy ngược lại quyết liệt.</p>
+
+            <!-- Visual Mini-Chart -->
+            <div class="bg-slate-50 rounded-xl p-4 flex items-center justify-center gap-8 h-32 border border-slate-100">
+              <!-- Bearish Pin -->
+              <div class="flex flex-col items-center gap-2">
+                <span class="text-xs text-slate-400 font-bold uppercase">Bearish</span>
+                <div class="relative w-4 h-20 flex flex-col items-center">
+                  <div class="w-0.5 h-12 bg-red-500"></div> <!-- Wick -->
+                  <div class="w-4 h-4 bg-red-500 rounded-sm"></div> <!-- Body -->
+                  <div class="w-0.5 h-4 bg-red-500"></div> <!-- Wick -->
+                </div>
+              </div>
+              <!-- Bullish Pin -->
+              <div class="flex flex-col items-center gap-2">
+                <span class="text-xs text-slate-400 font-bold uppercase">Bullish</span>
+                <div class="relative w-4 h-20 flex flex-col items-center justify-end">
+                  <div class="w-0.5 h-4 bg-green-500"></div> <!-- Wick -->
+                  <div class="w-4 h-4 bg-green-500 rounded-sm"></div> <!-- Body -->
+                  <div class="w-0.5 h-12 bg-green-500"></div> <!-- Wick -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Engulfing Card -->
+        <div
+          class="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg shadow-slate-200/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
+          <div
+            class="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110">
+          </div>
+          <div class="relative z-10">
+            <div
+              class="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center text-3xl mb-6 text-blue-600 shadow-sm">
+              🔄</div>
+
+            <div class="flex flex-col gap-1 mb-4">
+              <h3 class="text-2xl font-bold text-slate-900" data-i18n="pattern_engulfing_title">Engulfing</h3>
+              <span
+                class="text-blue-500 font-medium text-sm bg-blue-50 self-start px-3 py-1 rounded-lg border border-blue-100"
+                data-i18n="pattern_engulfing_sub">Strong Reversal</span>
+            </div>
+
+            <p class="text-slate-600 text-base leading-relaxed mb-6" data-i18n="pattern_engulfing_desc">Nến sau 'nuốt
+              chửng' hoàn toàn thân nến trước. Phe này áp đảo phe kia.</p>
+
+            <!-- Visual Mini-Chart -->
+            <div class="bg-slate-50 rounded-xl p-4 flex items-center justify-center gap-8 h-32 border border-slate-100">
+              <div class="flex items-end gap-1">
+                <div class="w-3 h-8 bg-red-400 rounded-sm"></div>
+                <div class="w-4 h-14 bg-green-500 rounded-sm border border-green-600"></div>
+              </div>
+              <div class="text-slate-300 font-black text-xl">VS</div>
+              <div class="flex items-end gap-1">
+                <div class="w-3 h-8 bg-green-400 rounded-sm"></div>
+                <div class="w-4 h-14 bg-red-500 rounded-sm border border-red-600 shadow-sm"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inside Bar Card -->
+        <div
+          class="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg shadow-slate-200/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
+          <div
+            class="absolute top-0 right-0 w-32 h-32 bg-yellow-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110">
+          </div>
+          <div class="relative z-10">
+            <div
+              class="w-16 h-16 bg-yellow-100 rounded-2xl flex items-center justify-center text-3xl mb-6 text-yellow-600 shadow-sm">
+              📦</div>
+
+            <div class="flex flex-col gap-1 mb-4">
+              <h3 class="text-2xl font-bold text-slate-900" data-i18n="pattern_inside_title">Inside Bar</h3>
+              <span
+                class="text-yellow-600 font-medium text-sm bg-yellow-50 self-start px-3 py-1 rounded-lg border border-yellow-100"
+                data-i18n="pattern_inside_sub">Consolidation</span>
+            </div>
+
+            <p class="text-slate-600 text-base leading-relaxed mb-6" data-i18n="pattern_inside_desc">Nến con nằm lọt
+              thỏm trong nến mẹ. Lò xo đang nén.</p>
+
+            <div class="bg-slate-50 rounded-xl p-4 flex items-center justify-center h-32 border border-slate-100">
+              <div class="bg-white p-4 rounded-lg border border-slate-100 flex items-center gap-2 shadow-sm">
+                <div class="w-4 h-16 bg-slate-300 rounded-sm"></div> <!-- Mother -->
+                <div class="w-3 h-8 bg-yellow-400 rounded-sm"></div> <!-- Child -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Doji Card -->
+        <div
+          class="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg shadow-slate-200/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
+          <div
+            class="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110">
+          </div>
+          <div class="relative z-10">
+            <div
+              class="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center text-3xl mb-6 text-purple-600 shadow-sm">
+              ➕</div>
+
+            <div class="flex flex-col gap-1 mb-4">
+              <h3 class="text-2xl font-bold text-slate-900" data-i18n="pattern_doji_title">Doji</h3>
+              <span
+                class="text-purple-600 font-medium text-sm bg-purple-50 self-start px-3 py-1 rounded-lg border border-purple-100"
+                data-i18n="pattern_doji_sub">Indecision</span>
+            </div>
+
+            <p class="text-slate-600 text-base leading-relaxed mb-6" data-i18n="pattern_doji_desc">Giá đóng cửa ≈ mở
+              cửa. Thị trường lưỡng lự.</p>
+
+            <div class="bg-slate-50 rounded-xl p-4 flex items-center justify-center h-32 border border-slate-100">
+              <div class="flex items-center gap-6">
+                <div class="flex flex-col items-center w-8">
+                  <div class="w-0.5 h-6 bg-slate-400"></div>
+                  <div class="w-4 h-0.5 bg-slate-800"></div>
+                  <div class="w-0.5 h-6 bg-slate-400"></div>
+                </div>
+                <div class="flex flex-col items-center w-8">
+                  <div class="w-0.5 h-3 bg-slate-400"></div>
+                  <div class="w-4 h-0.5 bg-slate-800"></div>
+                  <div class="w-0.5 h-8 bg-slate-400"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+    <!-- SECTION: Risk Management -->
+    <section id="section-riskmanagement" class="education-section mb-20 hidden">
+      <div class="text-center mb-12">
+        <span
+          class="bg-red-100 text-red-600 px-4 py-1.5 rounded-full text-sm font-bold tracking-wide uppercase mb-4 inline-block">Survival
+          Kit</span>
+        <h2 class="text-3xl md:text-4xl font-bold text-slate-900 mb-4" data-i18n="section_risk_title">Risk Management &
+          Psychology</h2>
+        <p class="text-slate-600 max-w-2xl mx-auto text-lg">Yếu tố quyết định 90% sự thành bại của một Trader chuyên
+          nghiệp.</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+        <!-- Position Sizing Card -->
+        <div
+          class="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg shadow-red-100/50 hover:-translate-y-1 transition-transform duration-300">
+          <div class="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center text-2xl mb-6 text-red-600">💰
+          </div>
+          <h3 class="text-xl font-bold text-slate-900 mb-2" data-i18n="risk_position_title">Position Sizing</h3>
+          <p class="text-slate-600 text-sm mb-6" data-i18n="risk_position_desc">Tuyệt đối không rủi ro quá 2% vốn cho
+            một lệnh.</p>
+
+          <div class="bg-slate-900 rounded-2xl p-6 text-center relative overflow-hidden group">
+            <div
+              class="absolute inset-0 bg-gradient-to-r from-red-600/20 to-orange-600/20 opacity-0 group-hover:opacity-100 transition-opacity">
+            </div>
+            <p class="text-slate-400 text-xs font-mono mb-2 uppercase tracking-widest">Max Risk Per Trade</p>
+            <div class="text-4xl font-black text-white mb-1">2%</div>
+            <p class="text-slate-500 text-xs">of Equity</p>
+          </div>
+        </div>
+
+        <!-- R:R Ratio Card -->
+        <div
+          class="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg shadow-emerald-100/50 hover:-translate-y-1 transition-transform duration-300">
+          <div
+            class="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center text-2xl mb-6 text-emerald-600">
+            ⚖️</div>
+          <h3 class="text-xl font-bold text-slate-900 mb-2" data-i18n="risk_rr_title">R:R Ratio</h3>
+          <p class="text-slate-600 text-sm mb-6" data-i18n="risk_rr_desc">Tỷ lệ rủi ro / lợi nhuận tối thiểu phải là
+            1:2.</p>
+
+          <!-- Visual R:R Scale -->
+          <div class="flex items-stretch h-24 rounded-2xl overflow-hidden font-bold text-white text-sm">
+            <div class="flex-1 bg-red-500 flex items-center justify-center flex-col">
+              <span>RISK</span>
+              <span class="text-xs opacity-80">1 part</span>
+            </div>
+            <div class="w-px bg-white/20"></div>
+            <div class="flex-[2] bg-emerald-500 flex items-center justify-center flex-col relative overflow-hidden">
+              <div
+                class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10">
+              </div>
+              <span>REWARD</span>
+              <span class="text-xs opacity-80">2+ parts</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Psychology Card -->
+        <div
+          class="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg shadow-purple-100/50 hover:-translate-y-1 transition-transform duration-300">
+          <div
+            class="w-14 h-14 bg-purple-100 rounded-2xl flex items-center justify-center text-2xl mb-6 text-purple-600">
+            🧠</div>
+          <h3 class="text-xl font-bold text-slate-900 mb-2" data-i18n="risk_psy_title">Trading Psychology</h3>
+          <p class="text-slate-600 text-sm mb-6">Kiểm soát cảm xúc là chìa khóa.</p>
+
+          <div class="space-y-3">
+            <div class="flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
+              <div
+                class="w-6 h-6 rounded-full bg-red-200 flex items-center justify-center text-red-600 text-xs font-bold">
+                ✕</div>
+              <span class="text-sm text-slate-700 font-medium" data-i18n="risk_psy_fomo">No FOMO</span>
+            </div>
+            <div class="flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
+              <div
+                class="w-6 h-6 rounded-full bg-red-200 flex items-center justify-center text-red-600 text-xs font-bold">
+                ✕</div>
+              <span class="text-sm text-slate-700 font-medium" data-i18n="risk_psy_revenge">No Revenge Trading</span>
+            </div>
+            <div class="flex items-center gap-3 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+              <div
+                class="w-6 h-6 rounded-full bg-emerald-200 flex items-center justify-center text-emerald-600 text-xs font-bold">
+                ✓</div>
+              <span class="text-sm text-slate-700 font-medium" data-i18n="risk_psy_patience">Patience &
+                Discipline</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: Pro Strategies (SMC/ICT) -->
+    <section id="section-pro" class="education-section mb-20 hidden">
+      <div
+        class="bg-[#0f172a] rounded-[2rem] p-8 md:p-12 text-white shadow-2xl overflow-hidden relative border border-slate-800">
+        <!-- Background Effects -->
+        <div
+          class="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-600/20 rounded-full blur-[100px] -mr-40 -mt-40 pointer-events-none">
+        </div>
+        <div
+          class="absolute bottom-0 left-0 w-[400px] h-[400px] bg-purple-600/20 rounded-full blur-[80px] -ml-20 -mb-20 pointer-events-none">
+        </div>
+
+        <div class="relative z-10 text-center mb-16">
+          <span
+            class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-4 py-1.5 rounded-full text-sm font-bold tracking-wide uppercase mb-4 inline-block backdrop-blur-md">Institutional
+            Grade</span>
+          <h2
+            class="text-3xl md:text-5xl font-bold mb-6 bg-gradient-to-r from-white to-slate-400 text-transparent bg-clip-text"
+            data-i18n="section_pro_title">Professional Strategies</h2>
+          <p class="text-slate-400 max-w-2xl mx-auto text-lg">Smart Money Concepts (SMC) & ICT Methodology. Giao dịch
+            cùng dấu chân của dòng tiền lớn.</p>
+        </div>
+
+        <!-- Concepts Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+          <!-- Order Block -->
+          <div
+            class="bg-white/5 backdrop-blur-lg border border-white/10 p-6 rounded-2xl hover:bg-white/10 transition-colors group">
+            <div
+              class="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+              🧱</div>
+            <h3 class="text-xl font-bold mb-2 text-blue-200" data-i18n="pro_ob_title">Order Block (OB)</h3>
+            <p class="text-slate-400 text-sm leading-relaxed" data-i18n="pro_ob_desc">Vùng giá Big Player để lại dấu
+              chân. Nến giảm cuối cùng trước khi tăng mạnh.</p>
+          </div>
+
+          <!-- FVG -->
+          <div
+            class="bg-white/5 backdrop-blur-lg border border-white/10 p-6 rounded-2xl hover:bg-white/10 transition-colors group">
+            <div
+              class="w-12 h-12 bg-yellow-500/20 rounded-xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+              📊</div>
+            <h3 class="text-xl font-bold mb-2 text-yellow-200" data-i18n="pro_fvg_title">Fair Value Gap (FVG)</h3>
+            <p class="text-slate-400 text-sm leading-relaxed" data-i18n="pro_fvg_desc">Khoảng trống giá mất cân bằng
+              (Imbalance). Giá thường quay lại lấp (fill) gap này.</p>
+          </div>
+
+          <!-- Liquidity -->
+          <div
+            class="bg-white/5 backdrop-blur-lg border border-white/10 p-6 rounded-2xl hover:bg-white/10 transition-colors group">
+            <div
+              class="w-12 h-12 bg-pink-500/20 rounded-xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+              💧</div>
+            <h3 class="text-xl font-bold mb-2 text-pink-200" data-i18n="pro_liquidity_title">Liquidity (BSL/SSL)</h3>
+            <p class="text-slate-400 text-sm leading-relaxed" data-i18n="pro_bsl">Thanh khoản của các lệnh Stoploss
+              retail. Market Maker sẽ quét vùng này trước khi đảo chiều.</p>
+          </div>
+        </div>
+
+        <!-- Session Trading -->
+        <div class="mb-16">
+          <h3 class="text-2xl font-bold mb-8 text-center" data-i18n="session_title">Market Sessions & Killzones</h3>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- London -->
+            <div class="bg-indigo-900/30 border border-indigo-500/30 rounded-2xl p-6 relative overflow-hidden">
+              <div class="absolute top-0 right-0 p-4 opacity-20 text-4xl font-black">LDN</div>
+              <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">🇬🇧</span>
+                <h4 class="font-bold text-lg" data-i18n="session_london">London Open</h4>
+              </div>
+              <p class="text-slate-400 text-sm mb-4" data-i18n="session_london_desc">Volume cao nhất, thường tạo
+                đỉnh/đáy của ngày.</p>
+              <div class="bg-indigo-500/20 rounded-lg px-3 py-2 inline-block">
+                <span class="text-indigo-300 font-mono text-xs">⏰ 14:00 - 17:00</span>
+              </div>
+            </div>
+
+            <!-- New York -->
+            <div class="bg-emerald-900/30 border border-emerald-500/30 rounded-2xl p-6 relative overflow-hidden">
+              <div class="absolute top-0 right-0 p-4 opacity-20 text-4xl font-black">NY</div>
+              <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">🇺🇸</span>
+                <h4 class="font-bold text-lg" data-i18n="session_ny">New York</h4>
+              </div>
+              <p class="text-slate-400 text-sm mb-4" data-i18n="session_ny_desc">Biến động mạnh, Reversal hoặc
+                Continuation.</p>
+              <div class="bg-emerald-500/20 rounded-lg px-3 py-2 inline-block">
+                <span class="text-emerald-300 font-mono text-xs">⏰ 19:00 - 22:00</span>
+              </div>
+            </div>
+
+            <!-- Asian -->
+            <div class="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 relative overflow-hidden">
+              <div class="absolute top-0 right-0 p-4 opacity-20 text-4xl font-black">ASIA</div>
+              <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">🇯🇵</span>
+                <h4 class="font-bold text-lg" data-i18n="session_asian">Asian Session</h4>
+              </div>
+              <p class="text-slate-400 text-sm mb-4" data-i18n="session_asian_desc">Accumulation, Range bound. Tạo thanh
+                khoản.</p>
+              <div class="bg-slate-700/50 rounded-lg px-3 py-2 inline-block">
+                <span class="text-slate-400 font-mono text-xs">⏰ 06:00 - 14:00</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Setup Checklist -->
+        <div class="bg-white/5 border border-white/10 rounded-3xl p-8 max-w-4xl mx-auto">
+          <h3 class="text-2xl font-bold mb-6 text-center text-yellow-500 flex items-center justify-center gap-3">
+            <span>⚡</span> <span data-i18n="pro_entry_model">The Perfect Entry Model</span>
+          </h3>
+          <div class="space-y-4">
+            <div class="flex items-start gap-4">
+              <div
+                class="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-500 font-bold shrink-0">
+                1</div>
+              <div>
+                <h4 class="font-bold text-white mb-1" data-i18n="pro_bias">Determine Daily Bias</h4>
+                <p class="text-slate-400 text-sm">Xác định xu hướng chủ đạo trên khung D1/H4.</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-4">
+              <div
+                class="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-500 font-bold shrink-0">
+                2</div>
+              <div>
+                <h4 class="font-bold text-white mb-1" data-i18n="pro_sweep">Wait for Liquidity Sweep</h4>
+                <p class="text-slate-400 text-sm">Chờ giá quét qua đỉnh/đáy cũ (Asian High/Low, PDH/PDL).</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-4">
+              <div
+                class="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-500 font-bold shrink-0">
+                3</div>
+              <div>
+                <h4 class="font-bold text-white mb-1" data-i18n="pro_waiting_choch">Market Structure Shift (MSS/CHoCH)
+                </h4>
+                <p class="text-slate-400 text-sm">Xác nhận sự đảo chiều trên khung nhỏ (M15/M5).</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-4">
+              <div
+                class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-green-500 font-bold shrink-0">
+                4</div>
+              <div>
+                <h4 class="font-bold text-white mb-1" data-i18n="pro_entry_fvg">Sniper Entry at FVG</h4>
+                <p class="text-slate-400 text-sm">Đặt limit order tại FVG hoặc Order Block vừa tạo ra.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="main-content border-t border-gray-200/50 mt-12">
+    <div class="max-w-7xl mx-auto px-6 py-6">
+      <p class="text-center text-slate-500 text-sm">
+        Charts powered by <span class="text-tv-green font-medium">TradingView</span> • Forex TA Tutorial © 2026
+      </p>
+    </div>
+  </footer>
+
+  <!-- TradingView Widget Script -->
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <script>
+    // Widget configurations
+    let mainWidget = null;
+
+    function createWidget(containerId, symbol, interval) {
+      return new TradingView.widget({
+        "symbol": symbol,
+        "interval": interval,
+        "timezone": "Asia/Ho_Chi_Minh",
+        "theme": "dark",
+        "style": "1",
+        "locale": "vi_VN",
+        "toolbar_bg": "#1e222d",
+        "enable_publishing": false,
+        "allow_symbol_change": true,
+        "container_id": containerId,
+        "autosize": true,
+        "hide_side_toolbar": false,
+        "studies": [
+          "MASimple@tv-basicstudies",
+          "RSI@tv-basicstudies",
+          "Volume@tv-basicstudies"
+        ],
+        "save_image": true,
+        "withdateranges": true
+      });
+    }
+
+    function updateMainChart() {
+      const symbol = document.getElementById('symbolSelect').value;
+      const interval = document.getElementById('intervalSelect').value;
+
+      // Update title
+      const symbolName = symbol.split(':')[1] || symbol;
+      const exchange = symbol.split(':')[0];
+      const intervalText = {
+        '1': '1 phút', '5': '5 phút', '15': '15 phút',
+        '60': '1 giờ', '240': '4 giờ', 'D': 'Daily', 'W': 'Weekly'
+      }[interval] || interval;
+
+      document.getElementById('chartTitle').textContent = symbolName;
+      document.getElementById('chartSubtitle').textContent = `${exchange} • ${intervalText}`;
+
+      // Recreate widget
+      document.getElementById('tradingview_main').innerHTML = '';
+      mainWidget = createWidget('tradingview_main', symbol, interval);
+    }
+
+    // Initialize widgets
+    document.addEventListener('DOMContentLoaded', function () {
+      // Main chart
+      updateMainChart();
+
+      // Event listeners
+      document.getElementById('symbolSelect').addEventListener('change', updateMainChart);
+      document.getElementById('intervalSelect').addEventListener('change', updateMainChart);
+    });
+
+    // Tab switching function
+    function showSection(sectionName) {
+      // Hide all sections
+      document.querySelectorAll('.education-section').forEach(section => {
+        section.classList.add('hidden');
+      });
+
+      // Show selected section
+      const targetSection = document.getElementById('section-' + sectionName);
+      if (targetSection) {
+        targetSection.classList.remove('hidden');
+      }
+
+      // Update tab styles - reset all tabs first
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        // Reset to inactive state
+        btn.classList.remove('bg-indigo-600', 'text-slate-900', 'from-yellow-500', 'to-orange-500');
+        btn.classList.add('bg-white shadow-sm border border-slate-200', 'text-slate-600');
+
+        // Special handling for Pro tab - keep gradient but dimmed when inactive
+        if (btn.id === 'tab-pro') {
+          btn.classList.remove('bg-white shadow-sm border border-slate-200');
+          btn.classList.add('from-yellow-600', 'to-orange-600', 'text-slate-900', 'opacity-70');
+        }
+      });
+
+      // Activate selected tab
+      const activeTab = document.getElementById('tab-' + sectionName);
+      if (activeTab) {
+        activeTab.classList.remove('bg-white shadow-sm border border-slate-200', 'text-slate-600', 'opacity-70');
+
+        if (sectionName === 'pro') {
+          // Pro tab uses gradient
+          activeTab.classList.remove('from-yellow-600', 'to-orange-600');
+          activeTab.classList.add('from-yellow-500', 'to-orange-500', 'text-white');
+        } else {
+          // Other tabs use solid indigo
+          activeTab.classList.add('bg-indigo-600', 'text-white');
+        }
+      }
+
+      // Smooth scroll to section
+      targetSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      // Update sidebar lesson cards
+      document.querySelectorAll('.lesson-card').forEach(card => {
+        card.classList.remove('active');
+      });
+
+      // Close sidebar on mobile after selection
+      if (window.innerWidth < 1024) {
+        toggleSidebar();
+      }
+    }
+
+    // Sidebar toggle function
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      sidebar.classList.toggle('open');
+      overlay.classList.toggle('open');
+    }
+
+    // Scroll to charts section
+    function scrollToCharts() {
+      const chartSection = document.getElementById('tradingview_main');
+      if (chartSection) {
+        chartSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      if (window.innerWidth < 1024) {
+        toggleSidebar();
+      }
+    }
+  </script>
+</body>
+
+</html>
